@@ -1,0 +1,617 @@
+---
+title: "Meta-anlysis overview"
+author: "Daoming Wang"
+date: "2024/05/07"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+mwasCoh <- fread("00.rawData/mwas/metaAnalysis/all.EMMAX.mwas.cohortSpecific",sep = "\t")
+mwasSumm.long <- read.table("00.rawData/mwas/metaAnalysis/all.EMMAX.summ.tsv", sep = "\t", header = T, quote = "")
+mwasCoh.cl.pt.full.filtered  <-read.table("10.cohSpeQC/mwasCoh.cl.pt.full.filtered.tsv",sep = "\t", header = T, check.names = F)
+mwasMeta.cl.pt.full.filtered <-read.table("08.metaAnalysisQC/mwasMeta.cl.pt.full.filtered.tsv",sep = "\t", header = T, check.names = F)
+phenInfo<-read.table("02.phenotype_summary/phenInfoSumm.tsv", sep = "\t",header = T, check.names = F)
+speInfo<-read.table("03.genotypeSummary/speInfoSumm.tsv",sep = "\t", header = T, check.names = F)
+
+sampleCohorts<-read.table("00.rawData/cohortList/sampleCohorts.tsv",header = F)
+snpAnno <- fread("00.rawData/snpAnno/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.base1.perCohort.geno0.9.maf0.05.snpN1000.annotation.tsv", sep = "\t", header = F)
+geneAnno.df <- readRDS("01.cleanData/annotation/geneAnno.df.rds")
+```
+
+### 1.3 Setting
+
+```{r 1.3}
+snpAnno$Species <- snpAnno$V1 %>% str_replace_all("_.*", "")
+snpAnno$Impact  <- snpAnno$V3 %>% match(annotationType) %>% annotationImpact[.]
+snpAnno$ImpactLevel <- snpAnno$V3 %>% match(annotationType) %>% annotationLevel[.]
+
+geneAnno <- snpAnno[!duplicated(snpAnno$V2),c(5,2,4)]
+colnames(geneAnno) <- c("Species", "Gene", "Annotation")
+geneAnno.df[geneAnno.df==""]<-NA
+
+# Annotation proportion 
+snpAnnoSumm.long <- table(snpAnno$Species, snpAnno$Impact) %>% as.data.frame()
+snpAnnoSumm <- snpAnnoSumm.long %>% pivot_wider(names_from = Var2, values_from = Freq)
+snpAnnoSumm$TotalN <- snpAnnoSumm$High + snpAnnoSumm$Moderate + snpAnnoSumm$Low
+snpAnnoSumm$HighProp <- snpAnnoSumm$High/snpAnnoSumm$TotalN
+snpAnnoSumm$ModerateProp <- snpAnnoSumm$Moderate/snpAnnoSumm$TotalN
+snpAnnoSumm$LowProp <- snpAnnoSumm$Low/snpAnnoSumm$TotalN
+snpAnnoSumm$HighModerateProp <- snpAnnoSumm$HighProp + snpAnnoSumm$ModerateProp
+```
+
+## 2 Clean table
+
+```{r 2}
+# Clean association table
+mwasCoh.colname <- c(colnames(mwasCoh.cl.pt.full.filtered)[1:22], 
+                     "AF1", "AF2", "MISSING_CT", "OBS_CT", "BETA", "SE", "P", "R.Spearman", "P.Spearman", "P.PermSpearman", "QC",
+                     "Cohort_specific_SNP_sigCohort", "Cohort_specific_SNP_sigLevel", "Cohort_specific_SNP_speWideSig", 
+                     "Gene", "Impact", "Annotation", "ImpactLevel", "FunctionKnown" )
+
+mwasCoh.dmp     <- mwasCoh.cl.pt.full.filtered[,c(1:22, 23:33, 97:99, 110:114)]; colnames(mwasCoh.dmp)     <- mwasCoh.colname
+mwasCoh.lld1    <- mwasCoh.cl.pt.full.filtered[,c(1:22, 34:44, 97:99, 110:114)]; colnames(mwasCoh.lld1)    <- mwasCoh.colname
+mwasCoh.300ob   <- mwasCoh.cl.pt.full.filtered[,c(1:22, 45:55, 97:99, 110:114)]; colnames(mwasCoh.300ob)   <- mwasCoh.colname
+mwasCoh.500fg   <- mwasCoh.cl.pt.full.filtered[,c(1:22, 56:66, 97:99, 110:114)]; colnames(mwasCoh.500fg)   <- mwasCoh.colname
+mwasCoh.ibd     <- mwasCoh.cl.pt.full.filtered[,c(1:22, 67:77, 97:99, 110:114)]; colnames(mwasCoh.ibd)     <- mwasCoh.colname
+mwasCoh.300tzfg <- mwasCoh.cl.pt.full.filtered[,c(1:22, 78:88, 97:99, 110:114)]; colnames(mwasCoh.300tzfg) <- mwasCoh.colname
+
+mwasCoh.cl.long <- rbind(mwasCoh.dmp, mwasCoh.lld1,mwasCoh.300ob,mwasCoh.500fg,mwasCoh.ibd,mwasCoh.300tzfg) # %>% na.omit()
+mwasCoh.cl.long <- mwasCoh.cl.long[!is.na(mwasCoh.cl.long$QC),]
+mwasCoh.cl.long <- cbind(mwasCoh.cl.long, mwasCoh.cl.long$Gene %>% match(geneAnno.df$ID) %>% geneAnno.df[.,c(2,4,6:8,10)])
+
+if(!dir.exists("11.cohSpeOverview")){dir.create("11.cohSpeOverview")}
+write.table(mwasCoh.cl.long,"11.cohSpeOverview/mwasCoh.cl.long.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+
+# Clean summary
+mwasSumm <- pivot_wider(mwasSumm.long, names_from = Parameter, values_from = Value) %>% as.data.frame # %>% dplyr::select(1:13)
+for (i in c(2:13,16:36)) {
+  mwasSumm[,i] <- as.numeric(mwasSumm[,i])
+}
+
+mwasSumm<-mwasSumm[-grep("TLCA|TUDCA|TLCA_p|TUDCA_p", mwasSumm$Phenotype),]
+mwasSumm$Phenotype <- mwasSumm$Phenotype %>% str_replace_all(".EMMAX", "")
+
+mwasSumm$Lowest.P.meta[is.infinite(mwasSumm$Lowest.P.meta)]<-NA
+mwasSumm$Lowest.P.meta.nohet[is.infinite(mwasSumm$Lowest.P.meta.nohet)]<-NA
+
+for (i in 1:nrow(mwasSumm)) {
+  #  i <- 1
+  # Clean meta-analysis
+  mwasMeta.cl.pt.full.filtered_i <- mwasMeta.cl.pt.full.filtered %>% dplyr::filter(Phenotype== mwasSumm$Phenotype[i])
+  mwasMeta.cl.pt.full.filtered_nohet_i <- mwasMeta.cl.pt.full.filtered_i %>% dplyr::filter(HetPVal>0.05) 
+
+  mwasSumm$Lowest.P.meta[i]       <- min(mwasMeta.cl.pt.full.filtered_i$P.value, na.rm = T)
+  mwasSumm$N.SNP.metaStudyWideSig[i] <- sum(mwasMeta.cl.pt.full.filtered_i$P.value < studyWideP, na.rm = T)
+  mwasSumm$N.SNP.metaMetaWideSig[i]  <- sum(mwasMeta.cl.pt.full.filtered_i$P.value < metaWideP &
+                                              mwasMeta.cl.pt.full.filtered_i$P.value > studyWideP, na.rm = T)
+  mwasSumm$N.SNP.metaSpeWideSig[i]   <- sum(mwasMeta.cl.pt.full.filtered_i$P.value < speWideP  &
+                                              mwasMeta.cl.pt.full.filtered_i$P.value > metaWideP, na.rm = T)
+  
+  mwasSumm$Lowest.P.meta.nohet[i]       <- min(mwasMeta.cl.pt.full.filtered_nohet_i$P.value, na.rm = T)
+  mwasSumm$N.SNP.metaStudyWideSig.nohet[i] <- sum(mwasMeta.cl.pt.full.filtered_nohet_i$P.value < studyWideP, na.rm = T)
+  mwasSumm$N.SNP.metaMetaWideSig.nohet[i]  <- sum(mwasMeta.cl.pt.full.filtered_nohet_i$P.value < metaWideP &
+                                                    mwasMeta.cl.pt.full.filtered_nohet_i$P.value > studyWideP, na.rm = T)
+  mwasSumm$N.SNP.metaSpeWideSig.nohet[i]   <- sum(mwasMeta.cl.pt.full.filtered_nohet_i$P.value < speWideP &
+                                                    mwasMeta.cl.pt.full.filtered_nohet_i$P.value > metaWideP, na.rm = T)
+  
+  # Clean cohort-specific associations
+  mwasCoh.cl.pt.full.filtered_i <- mwasCoh.cl.pt.full.filtered %>% dplyr::filter(Phenotype== mwasSumm$Phenotype[i])
+
+  mwasSumm$N.SNP.dmp.studyWideSig[i] <- sum(mwasCoh.cl.pt.full.filtered_i$P.dmp < studyWideP, na.rm = T)
+  mwasSumm$N.SNP.dmp.metaWideSig[i]  <- sum((mwasCoh.cl.pt.full.filtered_i$P.dmp < metaWideP) &
+                                              (mwasCoh.cl.pt.full.filtered_i$P.dmp > studyWideP), na.rm = T)
+  mwasSumm$N.SNP.dmp.speWideSig[i]   <- sum((mwasCoh.cl.pt.full.filtered_i$P.dmp < speWideP) &
+                                              (mwasCoh.cl.pt.full.filtered_i$P.dmp > metaWideP), na.rm = T)
+  
+  mwasSumm$N.SNP.lld1.studyWideSig[i] <- sum(mwasCoh.cl.pt.full.filtered_i$P.lld1 < studyWideP, na.rm = T)
+  mwasSumm$N.SNP.lld1.metaWideSig[i]  <- sum((mwasCoh.cl.pt.full.filtered_i$P.lld1 < metaWideP) &
+                                               (mwasCoh.cl.pt.full.filtered_i$P.lld1 > studyWideP), na.rm = T)
+  mwasSumm$N.SNP.lld1.speWideSig[i]   <- sum((mwasCoh.cl.pt.full.filtered_i$P.lld1 < speWideP) &
+                                               (mwasCoh.cl.pt.full.filtered_i$P.lld1 > metaWideP), na.rm = T)
+
+  mwasSumm$N.SNP.300ob.studyWideSig[i] <- sum(mwasCoh.cl.pt.full.filtered_i$P.300ob < studyWideP, na.rm = T)
+  mwasSumm$N.SNP.300ob.metaWideSig[i]  <- sum(mwasCoh.cl.pt.full.filtered_i$P.300ob < metaWideP &
+                                                mwasCoh.cl.pt.full.filtered_i$P.300ob > studyWideP, na.rm = T)
+  mwasSumm$N.SNP.300ob.speWideSig[i]   <- sum(mwasCoh.cl.pt.full.filtered_i$P.300ob < speWideP &
+                                                mwasCoh.cl.pt.full.filtered_i$P.300ob > metaWideP, na.rm = T)
+  
+  mwasSumm$N.SNP.500fg_fsk.studyWideSig[i] <- sum(mwasCoh.cl.pt.full.filtered_i$P.500fg < studyWideP, na.rm = T)
+  mwasSumm$N.SNP.500fg_fsk.metaWideSig[i]  <- sum(mwasCoh.cl.pt.full.filtered_i$P.500fg < metaWideP &
+                                                mwasCoh.cl.pt.full.filtered_i$P.500fg > studyWideP, na.rm = T)
+  mwasSumm$N.SNP.500fg_fsk.speWideSig[i]   <- sum(mwasCoh.cl.pt.full.filtered_i$P.500fg < speWideP &
+                                                mwasCoh.cl.pt.full.filtered_i$P.500fg > metaWideP, na.rm = T)
+  
+  mwasSumm$N.SNP.ibd.studyWideSig[i] <- sum(mwasCoh.cl.pt.full.filtered_i$P.ibd < studyWideP, na.rm = T)
+  mwasSumm$N.SNP.ibd.metaWideSig[i]  <- sum(mwasCoh.cl.pt.full.filtered_i$P.ibd < metaWideP &
+                                              mwasCoh.cl.pt.full.filtered_i$P.ibd > studyWideP, na.rm = T)
+  mwasSumm$N.SNP.ibd.speWideSig[i]   <- sum(mwasCoh.cl.pt.full.filtered_i$P.ibd < speWideP &
+                                              mwasCoh.cl.pt.full.filtered_i$P.ibd > metaWideP, na.rm = T)
+  
+  mwasSumm$N.SNP.300tzfg.studyWideSig[i] <- sum(mwasCoh.cl.pt.full.filtered_i$P.300tzfg < studyWideP, na.rm = T)
+  mwasSumm$N.SNP.300tzfg.metaWideSig[i]  <- sum(mwasCoh.cl.pt.full.filtered_i$P.300tzfg < metaWideP &
+                                                  mwasCoh.cl.pt.full.filtered_i$P.300tzfg > studyWideP, na.rm = T)
+  mwasSumm$N.SNP.300tzfg.speWideSig[i]   <- sum(mwasCoh.cl.pt.full.filtered_i$P.300tzfg < speWideP &
+                                                  mwasCoh.cl.pt.full.filtered_i$P.300tzfg > metaWideP, na.rm = T)
+}
+
+mwasSumm$Lowest.P.meta[is.infinite(mwasSumm$Lowest.P.meta)] <- NA
+mwasSumm$Lowest.P.meta.nohet[is.infinite(mwasSumm$Lowest.P.meta.nohet)] <- NA
+
+mwasSumm$N.SNP.metaSig <- mwasSumm$N.SNP.metaSpeWideSig + mwasSumm$N.SNP.metaMetaWideSig + mwasSumm$N.SNP.metaStudyWideSig 
+mwasSumm$N.SNP.metaSig.nohet <- mwasSumm$N.SNP.metaSpeWideSig.nohet + mwasSumm$N.SNP.metaMetaWideSig.nohet + mwasSumm$N.SNP.metaStudyWideSig.nohet
+mwasSumm$N.SNP.cohSpeSig <- rowSums(mwasSumm[,19:36])
+#mwasSumm <- mwasSumm %>% dplyr::filter(N.SNP.metaSig > 0)
+
+mwasSumm.sort <- dplyr::arrange(mwasSumm, Lowest.P.meta)
+mwasSumm.sort$Algorithm <- "REML"
+mwasSumm.sort <- cbind(mwasSumm.sort$Phenotype %>% match(phenInfo$UnifiedName) %>% phenInfo[.,c(1,2,3,5,6,7)], mwasSumm.sort)
+
+if(!dir.exists("11.cohSpeOverview/")){dir.create("11.cohSpeOverview/")}
+write.table(mwasSumm.sort,"11.cohSpeOverview/EMMAX.mwasSumm.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+
+# Clean single cohort association table
+mwasCoh.cl.long$MetaSigLevel <- "Species-wide"
+mwasCoh.cl.long$MetaSigLevel[mwasCoh.cl.long$P < metaWideP] <- "Metagenome-wide"
+mwasCoh.cl.long$MetaSigLevel[mwasCoh.cl.long$P < studyWideP] <- "Study-wide"
+
+```
+
+## 3 Single cohort association
+
+### 3.1 Association categories
+
+```{r 3.1}
+mwasCoh.pie.input <- mwasCoh.cl.long[,c(34:41,48)]
+
+pdf("11.cohSpeOverview/mwasCoh.sig.sigLevel.pie.pdf", width = 6, height = 6)
+ggpie(data = mwasCoh.pie.input, group_key = "MetaSigLevel", count_type = "full",
+               fill_color = pal_material("orange")(6)[c(3,4,6)],
+               label_info = "all", label_type = "horizon", label_split = NULL,
+               label_size = 4, label_pos = "in", label_threshold = 10,
+               border_size = 0)
+dev.off()
+
+pdf("11.cohSpeOverview/mwasCoh.sig.Cohort.pie.pdf", width = 6, height = 6)
+coh_color<-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                  pal_material("red")(6)[c(5)],                  # IBD
+                  pal_material("indigo")(6)[c(3)],             # 500FG-FSK
+                  pal_material("amber")(6)[c(5)],                # 300OOB
+                  pal_material("light-blue")(6)[c(5)],         # LLD1
+                  pal_material("light-green")(6)[c(5)]) %>% rev  # DMP
+ggpie(data = mwasCoh.pie.input, group_key = "Cohort_specific_SNP_sigCohort", count_type = "full",
+      fill_color = coh_color,
+      label_info = "all", label_type = "horizon", label_split = NULL,
+      label_size = 4, label_pos = "in", label_threshold = 10,
+      border_size = 0)
+dev.off()
+
+pdf("11.cohSpeOverview/mwasCoh.sig.Impact.pie.pdf", width = 6, height = 6)
+ggpie(data = mwasCoh.pie.input, group_key = "ImpactLevel", count_type = "full",
+      fill_color = pal_material("red")(6)[c(2,4,6)],
+      label_info = "all", label_type = "horizon", label_split = NULL,
+      label_size = 4, label_pos = "in", label_threshold = 10,
+      border_size = 0)
+dev.off()
+
+pdf("11.cohSpeOverview/mwasCoh.sig.FunctionKnown.pie.pdf", width = 6, height = 6)
+ggpie(data = mwasCoh.pie.input, group_key = "FunctionKnown", count_type = "full",
+      fill_color = pal_material("green")(6)[c(6,2)],
+      label_info = "all", label_type = "horizon", label_split = NULL,
+      label_size = 4, label_pos = "in", label_threshold = 10,
+      border_size = 0)
+dev.off()
+```
+
+### 3.2 Impact of SNPs
+
+```{r 3.2}
+# Summary of significant associations
+mwasCoh.cl.pt.summ.long <- table(mwasCoh.cl.pt.full.filtered$Phenotype, mwasCoh.cl.pt.full.filtered$CHR, mwasCoh.cl.pt.full.filtered$ImpactLevel) %>% as.data.frame()
+mwasCoh.cl.pt.summ      <- mwasCoh.cl.pt.summ.long %>% pivot_wider(names_from = Var3, values_from = Freq)
+mwasCoh.cl.pt.summ$TotalN <- mwasCoh.cl.pt.summ$High + mwasCoh.cl.pt.summ$Moderate + mwasCoh.cl.pt.summ$Low
+mwasCoh.cl.pt.summ$HighProp <- mwasCoh.cl.pt.summ$High/mwasCoh.cl.pt.summ$TotalN
+mwasCoh.cl.pt.summ$ModerateProp <- mwasCoh.cl.pt.summ$Moderate/mwasCoh.cl.pt.summ$TotalN
+mwasCoh.cl.pt.summ$LowProp <- mwasCoh.cl.pt.summ$Low/mwasCoh.cl.pt.summ$TotalN
+mwasCoh.cl.pt.summ$HighModerateProp <- mwasCoh.cl.pt.summ$HighProp + mwasCoh.cl.pt.summ$ModerateProp
+mwasCoh.cl.pt.summ.filt <- mwasCoh.cl.pt.summ %>% dplyr::filter(TotalN >= 10)
+mwasCoh.cl.pt.summ.filt$PhenClass <- mwasCoh.cl.pt.summ.filt$Var1 %>% match(phenInfo$UnifiedName) %>% phenInfo$Class[.]
+
+snpAnno.summ<-table(snpAnno$V3) %>% as.data.frame()
+snpAnno.summ$ImpactLevel <- snpAnno.summ$Var1 %>% match(annotationType) %>% annotationLevel[.]
+
+snpAnnoSumm.filt <- snpAnnoSumm[snpAnnoSumm$Var1 %in% mwasCoh.cl.pt.summ.filt$Var2,]
+speAnnoSumm.filt.order <- order(snpAnnoSumm.filt$HighModerateProp, decreasing = T) %>% snpAnnoSumm.filt$Var1[.]
+
+p_prop_high_moder_spe <- ggplot() + 
+  geom_bar(data=snpAnnoSumm.filt, aes(Var1, HighModerateProp),stat="identity", color = "#baccd9",fill = "#baccd9") +
+  geom_point(data=mwasCoh.cl.pt.summ.filt, aes(Var2, HighModerateProp, size = log10(TotalN), color = PhenClass), alpha = 0.7) +
+  scale_x_discrete(limits = speAnnoSumm.filt.order) +
+  scale_color_manual(breaks = phenClassOrder,
+                     values = phenClassColor)+
+  ylab("Propotion of high/moderate impact SNPs")+
+  xlab("Species")+
+  theme_linedraw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'black'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+pdf("11.cohSpeOverview/coh_prop_high_moderate_bar.pdf", width = 10, height = 3.5)
+print(p_prop_high_moder_spe)
+dev.off()
+```
+
+### 3.3 Prioritization
+
+```{r 3.3}
+mwasCoh.cl.pt.top <- mwasCoh.cl.long %>% dplyr::filter((ImpactLevel != "Low") & (Gene != Annotation) )
+write.table(mwasCoh.cl.pt.top, "11.cohSpeOverview/EMMAX.mwasCoh.prioritized.tsv",sep = "\t", col.names = T, row.names = F, quote = F)
+
+# Number of prioritized association for each phenotype
+mwasCoh.cl.pt.top.N     <- table(mwasCoh.cl.pt.top$Phenotype) %>% as.data.frame()
+colnames(mwasCoh.cl.pt.top.N) <- c("Phenotype",  "Count")
+mwasCoh.cl.pt.top.N_order <- mwasCoh.cl.pt.top.N$Phenotype[order(mwasCoh.cl.pt.top.N$Count, decreasing = T)]
+
+# Number of associated genes
+mwasCoh.cl.pt.top.gene <- mwasCoh.cl.pt.top[,c(16, 18, 37, 39)] %>% .[!duplicated(.[,c(1,3)]),]
+mwasCoh.cl.pt.top.gene$Species_gene <- paste(mwasCoh.cl.pt.top.gene$CHR, mwasCoh.cl.pt.top.gene$Annotation, sep = "__")
+mwasCoh.cl.pt.top.gene.count <- table(mwasCoh.cl.pt.top.gene$Gene) %>% sort(decreasing = T) %>% table %>% as.data.frame()
+colnames(mwasCoh.cl.pt.top.gene.count) <- c("AssociatedPhenNum", "GeneCount")
+
+p_mwasCoh.cl.pt.top.gene.count<-mwasCoh.cl.pt.top.gene.count[-1,] %>%
+  ggplot(aes(AssociatedPhenNum, GeneCount)) +
+  geom_bar(fill = "#257CB2", size = 0, stat="identity")+
+  scale_y_continuous(expand = c(0,0)) +
+  xlab("Associated phenotype number")+
+  ylab("Number of gene")+
+  theme_bw()+
+  theme(legend.position = "bottom",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.text.x = element_text(angle = 0, hjust = 1),
+        axis.ticks.x=element_blank())
+
+pdf("11.cohSpeOverview/mwasCoh.cl.pt.top.gene.count_bar.pdf", width = 5, height = 2.5)
+print(p_mwasCoh.cl.pt.top.gene.count)
+dev.off()
+
+mwasCoh.cl.pt.top.gene.count.top <- mwasCoh.cl.pt.top.gene.count <- table(mwasCoh.cl.pt.top.gene$Gene) %>% sort(decreasing = T) 
+mwasCoh.cl.pt.top.gene.count.top.df <- data.frame(Gene = names(mwasCoh.cl.pt.top.gene.count.top),
+                                                   Count = as.numeric(mwasCoh.cl.pt.top.gene.count.top),
+                                                   Annotation = names(mwasCoh.cl.pt.top.gene.count.top) %>% match(geneAnno$Gene) %>% geneAnno$Annotation[.])
+
+mwasCoh.cl.pt.top.anno <- mwasCoh.cl.pt.top.gene %>% .[!duplicated(.[,c(1,3,4)] ), c(1,2,4)]
+mwasCoh.cl.pt.top.anno.count <- table(mwasCoh.cl.pt.top.anno$Phenotype, mwasCoh.cl.pt.top.anno$Annotation) %>% as.data.frame()
+```
+
+### 3.4 Circos plot
+
+```{r 3.4}
+mwasSumm.cohortSpec <- mwasSumm.sort[mwasSumm.sort$N.SNP.cohSpeSig>0,] %>%
+  dplyr::arrange(desc(N.SNP.cohSpeSig))
+
+pdf("11.cohSpeOverview/EMMAX.mwasCohortSpec.summary.circos.pdf", width = 10, height = 8)
+
+circos.par("start.degree" = 180, "gap.after" = 25)
+circos.initialize('a', xlim = c(0, length(mwasSumm.cohortSpec$Phenotype)))
+
+# Phenotype class
+Class_col = c( "Anthropology" = "#257CB2",           "CurrentExposure" = "#E93E3F", "Diet" = "#4F9F3B",
+               "EarlyLifeExposure" = "#FE8B15",      "Metabolite" = "#73489F",
+               "GeographySocioeconomics" = "#A6CEE3","HealthDisease" = "#F68181",
+               "MedicalMeasurement" = "#A5D981",          "MedicationUse" = "#F7F599", 
+               "Stool" = "#10aec2")
+phen.class <- match(mwasSumm.cohortSpec$Phenotype, phenInfo$UnifiedName) %>% phenInfo$Class[.]
+circos.track(ylim = c(0, 1),cell.padding = c(0,0,0,0),
+             track.height = 0.05, bg.border = NA, bg.col = adjustcolor("white", alpha.f = 0.02), track.margin = c(0,0),
+             panel.fun = function(x, y) {
+               value = rep(1, length(phen.class))
+               circos.barplot(value, 1:length(phen.class), col = match(phen.class, names(Class_col))%>%Class_col[.], 
+                              border = adjustcolor("white", alpha.f = 0),bar_width = 1)
+               circos.text(1:nrow(mwasSumm.cohortSpec), 1, 
+                           paste0(mwasSumm.cohortSpec$Phenotype),
+                           facing = "clockwise", cex = 0.6,
+                           adj = c(0, 0.5), niceFacing = TRUE)
+             })
+
+
+# Number of SNPs that are significant in dmp
+snp.n <- log10(rowSums(mwasSumm.cohortSpec[,25:27]))
+snp.n[is.infinite(snp.n)]<-0
+circos.track(ylim = c(0,max(snp.n)),cell.padding = c(0,0,0.02,0),
+             track.height = 0.1,bg.border = NA, bg.col = adjustcolor("#9BCC65FF", alpha.f = 0.05), track.margin = c(0,0),
+             panel.fun = function(x, y) {
+               value = snp.n
+               value[is.infinite(value)]<-0
+               circos.barplot(value, 1:length(mwasSumm.cohortSpec$Phenotype), col = "#9BCC65FF", border = adjustcolor("#9BCC65FF", alpha.f = 0))
+               circos.yaxis(side = "left", labels.cex = 0.5,labels.niceFacing = F, at = seq(0, 4, by = 2))
+               circos.text(nrow(mwasSumm.cohortSpec), 1, 
+                           paste0("Significant SNP N in DMP"),
+                           facing = "bending.inside", cex = 0.8,
+                           adj = c(1, 0.5), niceFacing = TRUE)
+             })
+
+
+# Number of SNPs that are significant in lld1
+snp.n <- log10(rowSums(mwasSumm.cohortSpec[,28:30]))
+snp.n[is.infinite(snp.n)]<-0
+
+circos.track(ylim = c(0,max(snp.n)),cell.padding = c(0,0,0.02,0),
+             track.height = 0.1,bg.border = NA, bg.col = adjustcolor("#28B6F6FF", alpha.f = 0.05), track.margin = c(0,0),
+             panel.fun = function(x, y) {
+               value = snp.n
+               value[is.infinite(value)]<-0
+               circos.barplot(value, 1:length(mwasSumm.cohortSpec$Phenotype), col = "#28B6F6FF", border = adjustcolor("#28B6F6FF", alpha.f = 0))
+               circos.yaxis(side = "left", labels.cex = 0.5,labels.niceFacing = F, at = seq(0, 2, by = 1))
+               circos.text(nrow(mwasSumm.cohortSpec), 1, 
+                           paste0("Significant SNP N in LLD1"),
+                           facing = "bending.inside", cex = 0.8,
+                           adj = c(1, 0.5), niceFacing = TRUE)
+             })
+
+
+# Number of SNPs that are significant in 300ob
+snp.n <- log10(rowSums(mwasSumm.cohortSpec[,31:33]))
+snp.n[is.infinite(snp.n)]<-0
+circos.track(ylim = c(0,max(snp.n)),cell.padding = c(0,0,0.02,0),
+             track.height = 0.1,bg.border = NA, bg.col = adjustcolor("#FFCA27FF", alpha.f = 0.05), track.margin = c(0,0),
+             panel.fun = function(x, y) {
+               value = snp.n
+               value[is.infinite(value)]<-0
+               circos.barplot(value, 1:length(mwasSumm.cohortSpec$Phenotype), col = "#FFCA27FF", border = adjustcolor("#FFCA27FF", alpha.f = 0))
+               circos.yaxis(side = "left", labels.cex = 0.5,labels.niceFacing = F, at = seq(0, 3, by = 1))
+               circos.text(nrow(mwasSumm.cohortSpec), 1, 
+                           paste0("Significant SNP N in 300OB"),
+                           facing = "bending.inside", cex = 0.8,
+                           adj = c(1, 0.5), niceFacing = TRUE)
+             })
+
+
+# Number of SNPs that are significant in 500fg
+snp.n <- log10(rowSums(mwasSumm.cohortSpec[,34:36]))
+snp.n[is.infinite(snp.n)]<-0
+circos.track(ylim = c(0,max(snp.n)),cell.padding = c(0,0,0.02,0),
+             track.height = 0.1,bg.border = NA, bg.col = adjustcolor("#5B6BBFFF", alpha.f = 0.05), track.margin = c(0,0),
+             panel.fun = function(x, y) {
+               value = snp.n
+               value[is.infinite(value)]<-0
+               circos.barplot(value, 1:length(mwasSumm.cohortSpec$Phenotype), col = "#5B6BBFFF", border = adjustcolor("#5B6BBFFF", alpha.f = 0))
+               circos.yaxis(side = "left", labels.cex = 0.5,labels.niceFacing = F, at = seq(0, 3, by = 1))
+               circos.text(nrow(mwasSumm.cohortSpec), 1, 
+                           paste0("Significant SNP N in 500FG"),
+                           facing = "bending.inside", cex = 0.8,
+                           adj = c(1, 0.5), niceFacing = TRUE)
+             })
+
+
+# Number of SNPs that are significant in ibd
+snp.n <-  log10(rowSums(mwasSumm.cohortSpec[,37:39]))
+snp.n[is.infinite(snp.n)]<-0
+circos.track(ylim = c(0,max(snp.n)),cell.padding = c(0,0,0.02,0),
+             track.height = 0.1,bg.border = NA, bg.col = adjustcolor("#EE5250FF", alpha.f = 0.05), track.margin = c(0, 0),
+             panel.fun = function(x, y) {
+               value = snp.n
+               value[is.infinite(value)]<-0
+               circos.barplot(value, 1:length(mwasSumm.cohortSpec$Phenotype), col = "#EE5250FF", border = adjustcolor("#EE5250FF", alpha.f = 0))
+               circos.yaxis(side = "left", labels.cex = 0.5,labels.niceFacing = F, at = seq(0, 1.5, by = 1))
+               circos.text(nrow(mwasSumm.cohortSpec), 1, 
+                           paste0("Significant SNP N in IBD"),
+                           facing = "bending.inside", cex = 0.8,
+                           adj = c(1, 0.5), niceFacing = TRUE)
+             })
+
+# Number of SNPs that are significant in 300tzfg
+snp.n <-  log10(rowSums(mwasSumm.cohortSpec[,40:42]))
+snp.n[is.infinite(snp.n)]<-0
+circos.track(ylim = c(0,max(snp.n)),cell.padding = c(0,0,0.02,0),
+             track.height = 0.1,bg.border = NA, bg.col = adjustcolor("grey50", alpha.f = 0.05), track.margin = c(0, 0),
+             panel.fun = function(x, y) {
+               value = snp.n
+               value[is.infinite(value)]<-0
+               circos.barplot(value, 1:length(mwasSumm.cohortSpec$Phenotype), col = "grey50", border = adjustcolor("grey50", alpha.f = 0))
+               circos.yaxis(side = "left", labels.cex = 0.5,labels.niceFacing = F, at = seq(0, 3, by = 1))
+               circos.text(nrow(mwasSumm.cohortSpec), 1, 
+                           paste0("Significant SNP N in 300TZFG"),
+                           facing = "bending.inside", cex = 0.8,
+                           adj = c(1, 0.5), niceFacing = TRUE)
+             })
+
+# Number of SNPs
+circos.track(ylim = c(0, max(mwasSumm.cohortSpec$N.SNP)),cell.padding = c(0,0,0.02,0),
+             bg.border = NA,  track.margin = c(0,0),
+             panel.fun = function(x, y) {
+               value = data.frame(N.SNP.detectedIn1Cohort     = mwasSumm.cohortSpec$N.SNP.detectedIn1Cohort,
+                                  N.SNP.detectedInMultiCohort = mwasSumm.cohortSpec$N.SNP.detectedInMultiCohort ) %>% as.matrix
+               circos.barplot(value, 1:length(mwasSumm.cohortSpec$Phenotype), col = c("#0f95b0","#ef475d"), border = adjustcolor("white", alpha.f = 0))
+               circos.yaxis(side = "left", labels.cex = 0.5,labels.niceFacing = F)
+             })
+circos.clear()
+dev.off()
+```
+
+## 4 Functional proporty
+
+### 4.1 Enrichment of high/moderate impact SNVs
+
+```{r 4.1}
+mwasCoh.spe.phen.enrich <- data.frame(Phenotype = mwasCoh.cl.pt.summ.filt$Var1, 
+                                       Species = mwasCoh.cl.pt.summ.filt$Var2,
+                                       AssocSnpN = mwasCoh.cl.pt.summ.filt$TotalN,
+                                       AssocLowSnpN = mwasCoh.cl.pt.summ.filt$Low,
+                                       AssocHighModerateSnpN = mwasCoh.cl.pt.summ.filt$High+mwasCoh.cl.pt.summ.filt$Moderate,
+                                       AssocHighModerateProp = mwasCoh.cl.pt.summ.filt$HighModerateProp,
+                                       TotalSnpN = mwasCoh.cl.pt.summ.filt$Var2 %>% match(snpAnnoSumm.filt$Var1) %>% snpAnnoSumm.filt$TotalN[.],
+                                       TotalLowSnpN = mwasCoh.cl.pt.summ.filt$Var2 %>% match(snpAnnoSumm.filt$Var1) %>% snpAnnoSumm.filt$Low[.],
+                                       TotalHighModerateSnpN = snpAnnoSumm.filt$High[match(mwasCoh.cl.pt.summ.filt$Var2, snpAnnoSumm.filt$Var1)] + 
+                                                               snpAnnoSumm.filt$Moderate[match(mwasCoh.cl.pt.summ.filt$Var2, snpAnnoSumm.filt$Var1)],
+                                       TotalLowProp = mwasCoh.cl.pt.summ.filt$Var2 %>% match(snpAnnoSumm.filt$Var1) %>% snpAnnoSumm.filt$LowProp[.],
+                                       TotalHighModerateProp = mwasCoh.cl.pt.summ.filt$Var2 %>% match(snpAnnoSumm.filt$Var1) %>% snpAnnoSumm.filt$HighModerateProp[.])
+
+mwasCoh.spe.phen.enrich$Chisq.P <- NA
+mwasCoh.spe.phen.enrich$Log2Ratio <- NA
+
+for (i in 1:nrow(mwasCoh.spe.phen.enrich)) {
+#  i<-1
+  chisq_i <- chisq.test(x = c(mwasCoh.spe.phen.enrich$AssocLowSnpN[i], mwasCoh.spe.phen.enrich$AssocHighModerateSnpN[i]),
+                        p = c(mwasCoh.spe.phen.enrich$TotalLowProp[i], mwasCoh.spe.phen.enrich$TotalHighModerateProp[i]))
+  mwasCoh.spe.phen.enrich$Chisq.P[i] <- chisq_i$p.value
+  mwasCoh.spe.phen.enrich$Log2Ratio[i]   <- log2(mwasCoh.spe.phen.enrich$AssocHighModerateProp[i]/mwasCoh.spe.phen.enrich$TotalHighModerateProp[i])
+}
+
+mwasCoh.spe.phen.enrich$Chisq.FDR <- p.adjust(mwasCoh.spe.phen.enrich$Chisq.P, method = "fdr")
+mwasCoh.spe.phen.enrich <- mwasCoh.spe.phen.enrich %>% dplyr::filter(!is.infinite(Log2Ratio))
+mwasCoh.spe.phen.enrich$Sig <- "No"
+mwasCoh.spe.phen.enrich$Sig[mwasCoh.spe.phen.enrich$Chisq.FDR < 0.05] <- "Yes"
+write.table(mwasCoh.spe.phen.enrich,"11.cohSpeOverview/mwasCoh.spe.phen.enrich.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+
+mwasCoh.spe.phen.enrich.label <- paste(mwasCoh.spe.phen.enrich$Phenotype,mwasCoh.spe.phen.enrich$Species,sep = "-")
+mwasCoh.spe.phen.enrich.label[mwasCoh.spe.phen.enrich$Chisq.FDR>0.05] <- ""
+
+pdf("11.cohSpeOverview/mwasCoh.spe.phen.enrich.volcano.pdf",width = 5.5, height = 4.5)
+ggplot(mwasCoh.spe.phen.enrich,aes(Log2Ratio, -log10(Chisq.P), label = mwasCoh.spe.phen.enrich.label,color = Sig))+
+  geom_point(aes(size = AssocSnpN), alpha = 0.5)+
+  geom_text_repel(color = "black",box.padding = 0.1)+
+  xlab('log2(Observed/Expected)')+
+  ylab('-log10(P)')+
+  scale_color_manual(name   = NULL,
+                     breaks = c("Yes", "No"),
+                     labels = c("Significant    ", "Insignificant"),
+                     values = c("#ff4040","#4f94cd"))+
+  scale_shape_discrete(name = NULL)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.key = element_rect(fill = NA))
+dev.off()
+```
+
+### 4.2 Enzyme classes
+
+```{r 4.2}
+mwasCoh.ec <- mwasCoh.cl.long %>% 
+  dplyr::select(EC_number, ImpactLevel) %>%
+  dplyr::filter(!is.na(EC_number)) %>%
+  table() %>%
+  as.data.frame() %>%
+  dplyr::filter(Freq > 0)
+
+mwasCoh.ec <- data.frame(ImpactLevel = as.character(mwasCoh.ec$ImpactLevel),
+                          EC_level_2  = as.character(sub("\\.[^.]+\\.[^.]*$", "", mwasCoh.ec$EC_number)),
+                          EC_level_3  = as.character(sub("\\.[^.]*$", "", mwasCoh.ec$EC_number)),
+                          EC_level_4  = as.character(mwasCoh.ec$EC_number),
+                          Count       = mwasCoh.ec$Freq)
+mwasCoh.ec$ImpactLevel[mwasCoh.ec$ImpactLevel == "High"] <- "High/Moderate"
+mwasCoh.ec$ImpactLevel[mwasCoh.ec$ImpactLevel == "Moderate"] <- "High/Moderate"
+
+ec4 <- unique(mwasCoh.ec$EC_level_4)
+for (i in 1:length(ec4)) {
+#  i<-1
+  if(sum(mwasCoh.ec$Count[mwasCoh.ec$EC_level_4 == ec4[i]]) <= 200){
+    mwasCoh.ec$EC_level_4[mwasCoh.ec$EC_level_4 == ec4[i]] <- "Level 4 Others"
+  }else{
+    mwasCoh.ec$EC_level_4[mwasCoh.ec$EC_level_4 == ec4[i]] <- paste(ec4[i], " (", sum(mwasCoh.ec$Count[mwasCoh.ec$EC_level_4 == ec4[i]]), ")",sep = "")
+  }
+}
+
+ec3 <- unique(mwasCoh.ec$EC_level_3)
+for (i in 1:length(ec3)) {
+#  i<-1
+  if(sum(mwasCoh.ec$Count[mwasCoh.ec$EC_level_3 == ec3[i]]) <= 200){
+    mwasCoh.ec$EC_level_3[mwasCoh.ec$EC_level_3 == ec3[i]] <- "Level 3 Others"
+  }else{
+    mwasCoh.ec$EC_level_3[mwasCoh.ec$EC_level_3 == ec3[i]] <- paste(ec3[i], " (", sum(mwasCoh.ec$Count[mwasCoh.ec$EC_level_3 == ec3[i]]), ")",sep = "")
+  }
+}
+
+ec2 <- unique(mwasCoh.ec$EC_level_2)
+for (i in 1:length(ec2)) {
+  #  i<-1
+  if(sum(mwasCoh.ec$Count[mwasCoh.ec$EC_level_2 == ec2[i]]) <= 200){
+    mwasCoh.ec$EC_level_2[mwasCoh.ec$EC_level_2 == ec2[i]] <- "Level 2 Others"
+  }else{
+    mwasCoh.ec$EC_level_2[mwasCoh.ec$EC_level_2 == ec2[i]] <- paste(ec2[i], " (", sum(mwasCoh.ec$Count[mwasCoh.ec$EC_level_2 == ec2[i]]), ")",sep = "")
+  }
+}
+
+sankey_colors<-c("#E64B35", "#3C5488")
+
+pdf("11.cohSpeOverview/coh.EC_sankey_plot.pdf",width = 4,height = 3.5)
+ggplot(mwasCoh.ec,aes(axis1 = mwasCoh.ec$ImpactLevel, 
+                       axis2 = mwasCoh.ec$EC_level_2, 
+                       axis3 = mwasCoh.ec$EC_level_3,
+                       axis4 = mwasCoh.ec$EC_level_4,
+                       y     = mwasCoh.ec$Count))+
+  scale_x_discrete(limits = c("Impact", "EC level 2", "EC level 3", "EC level 4")) +
+  geom_alluvium(aes(fill = mwasCoh.ec$ImpactLevel),alpha = .6)+
+  geom_stratum(alpha = 0,color = adjustcolor( "white", alpha.f = 0.95),size=0.5)+
+  geom_text(stat = "stratum",cex=2,aes(label = after_stat(stratum))) +
+  scale_color_manual(values=sankey_colors)+
+  scale_fill_manual(values=sankey_colors)+
+  theme_minimal()+
+  theme(legend.position="none",
+        axis.text = element_text(size = 10),
+        axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        panel.grid=element_blank())
+
+dev.off()
+```
+
+### 4.3 Enzyme-phenotype
+
+```{r 4.3}
+mwasCoh.ec.phen <- mwasCoh.cl.long %>% 
+  dplyr::select(EC_number, ImpactLevel, Phenotype) %>%
+  dplyr::filter(!is.na(EC_number)) %>%
+  table() %>%
+  as.data.frame() %>%
+  dplyr::filter(Freq > 0)
+
+mwasCoh.ec.phen.df <- pivot_wider(mwasCoh.ec.phen, names_from = "ImpactLevel", values_from = "Freq")
+mwasCoh.ec.phen.df[is.na(mwasCoh.ec.phen.df)] <- 0
+mwasCoh.ec.phen.df$TotalSnpN <- mwasCoh.ec.phen.df$Low + mwasCoh.ec.phen.df$Moderate + mwasCoh.ec.phen.df$High
+```
+

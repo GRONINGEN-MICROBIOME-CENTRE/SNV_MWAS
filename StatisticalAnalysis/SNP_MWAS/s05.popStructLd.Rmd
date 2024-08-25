@@ -1,0 +1,222 @@
+---
+title: "Genotype summary"
+author: "Daoming Wang"
+date: "2023/08/09"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+speInfo<-read.table("00.rawData/speInfo/GT_Pro.909species.info.tsv",sep = "\t", header = T, check.names = F)
+speList <- read.table("00.rawData/speInfo/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.geno0.9.maf0.05.snpN1000.species.list")
+
+pca.top20 <- read.table("00.rawData/popStruct/Eigs.tsv", sep = "\t")
+pca.ss    <- read.table("00.rawData/popStruct/PcaSampleSize.tsv")
+ld <- read.table("00.rawData/speSumm/geno0.9.maf0.05.thin1000.LD.summ.tsv", sep = "\t", header = T)
+```
+
+### 1.3 General settings
+
+```{r 1.3}
+speInfo <- speInfo[speInfo$`Species ID` %in% speList$V1,]
+
+cohort_order       <- c("dmp", "lld1", "lld2_apk","lld2_fsk", "500fg_apk", "500fg_fsk", "300ob", "ibd", "300tzfg")
+cohort_label       <- c("DMP", "LLD1", "LLD2-APK","LLD2-FSK", "500FG-APK", "500FG-FSK", "300OB", "IBD", "300TZFG")
+cohort_title_label <- c("DMP", "LLD1", "LLD2_APK","LLD2_FSK", "500FG_APK", "500FG_FSK", "300OB", "IBD", "300TZFG")
+
+cohort_color<-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                pal_material("red")(6)[c(5)],                  # IBD
+                pal_material("amber")(6)[c(5)],                # 300OOB
+                pal_material("indigo")(6)[c(3,5)],             # 500FG-FSK 500FG-APK
+                pal_material("cyan")(6)[c(5)],                 # LLD2-FSK
+                pal_material("light-blue")(6)[c(3,5)],         # LLD2-APK LLD1
+                pal_material("light-green")(6)[c(5)]) %>% rev  # DMP
+
+Cohort_order<-c("all", cohort_order)
+Cohort_label<-c("All", cohort_label)
+Cohort_color<-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                pal_material("red")(6)[c(5)],                  # IBD
+                pal_material("amber")(6)[c(5)],                # 300OOB
+                pal_material("indigo")(6)[c(3,5)],             # 500FG-FSK 500FG-APK
+                pal_material("cyan")(6)[c(5)],                 # LLD2-FSK
+                pal_material("light-blue")(6)[c(3,5)],         # LLD2-APK LLD1
+                pal_material("light-green")(6)[c(5)],          # DMP
+                "grey30"                                       # All
+                ) %>% rev  
+
+
+if(!dir.exists("05.popStructLd")){dir.create("05.popStructLd")}
+```
+
+
+## 2 PCA summary
+
+```{r 2}
+colnames(pca.top20) <- c("SpeciesID", "PC", "EigenValue")
+pca.top20$PC <- paste("PC", pca.top20$PC, sep = "")
+pca.top20.wide <- pca.top20 %>% pivot_wider(names_from = "PC", values_from = "EigenValue")
+pca.top20.wide$Top10 <- rowSums(pca.top20.wide[,2:11])
+pca.top20.wide$Top20 <- rowSums(pca.top20.wide[,2:21])
+pca.top20.wide <- cbind(pca.top20.wide$SpeciesID %>% match(speInfo$`Species ID`) %>% speInfo[.,23:31], pca.top20.wide)
+
+colnames(pca.ss) <- c("SampleSize", "SpeciesID")
+pca.ss$SpeciesID <- pca.ss$SpeciesID %>% str_replace_all(".*/", "") %>% str_replace_all(".distance.tsv", "") 
+pca.ss <- na.omit(pca.ss)
+pca.ss$SampleSize <- pca.ss$SampleSize - 1
+pca.top20.wide$SampleSize <- match(pca.top20.wide$SpeciesID, pca.ss$SpeciesID) %>% pca.ss$SampleSize[.]
+
+write.table(pca.top20.wide, "05.popStructLd/pca.top20.wide.tsv",sep = "\t",col.names = T, row.names = F, quote = F)
+
+mean(pca.top20.wide$Top10[pca.top20.wide$SampleSize>1000])
+p_top10_pc <- pca.top20.wide %>% dplyr::filter(SampleSize>1000) %>%
+  ggplot(aes(x=Top10))+
+  geom_density(color = "#1772b4", fill = "#1772b4", alpha = 0.2)+
+  geom_rug(color = "#1772b4", alpha = 0.5,length = unit(0.05, "npc"))+
+  geom_vline(xintercept = mean(pca.top20.wide$Top10[pca.top20.wide$SampleSize>1000]), color = "#ed2f6a", linetype="dashed")+
+  ylab('Density')+
+  xlab('Cumulatively explained variance by top-10 PCs')+
+  scale_y_continuous(expand = c(0,0))+
+  theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line.x =  element_line(),
+        axis.line.y = element_line(),
+        legend.position = "none",
+        legend.key = element_rect(fill = NA), 
+        panel.grid.major = element_line(colour = NA),
+        panel.grid.minor = element_line(colour = NA), 
+        panel.background = element_rect(fill = NA))
+ 
+pdf("05.popStructLd/top10_pc_density.pdf", height = 3.5, width = 4)
+print(p_top10_pc)
+dev.off() 
+
+```
+
+## 8 LD structure
+
+### 8.1 Clean
+```{r 8}
+ld$Key <- paste(ld$Parameter, ld$Stat, sep = "_")
+colnames(ld)[1] <- "SpeciesID"
+ld.wide <- ld[,c(1,4,6,3)] %>% pivot_wider(names_from = Key, values_from = Value)
+ld.wide.full <- cbind(ld.wide$SpeciesID %>% match(speInfo$`Species ID`) %>% speInfo[.,23:31], ld.wide)
+write.table(ld.wide.full, "05.popStructLd/LD_summary.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+
+ld.highLdProp.summ <- ld.wide.full %>% 
+  dplyr::group_by(SpeciesID) %>% 
+  dplyr::summarise(CohortN = length(`LD_High LD proportion`),
+                   Max = max(`LD_High LD proportion`), 
+                   Min = min(`LD_High LD proportion`),
+                   Median = median(`LD_High LD proportion`),
+                   Mean = mean(`LD_High LD proportion`))
+ld.highLdProp.summ$Range <- ld.highLdProp.summ$Max - ld.highLdProp.summ$Min
+ld.highLdProp.summ.full <- cbind(ld.highLdProp.summ$SpeciesID %>% match(speInfo$`Species ID`) %>% speInfo[.,23:31], ld.highLdProp.summ)
+
+write.table(ld.highLdProp.summ.full, "05.popStructLd/high_LD_prop_summ.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+```
+
+### 8.2 High LD proportion
+```{r 8.2}
+ld.highLdProp.summ.long <- ld.highLdProp.summ[,1:3] %>% pivot_longer(2:3, names_to = "Parameter", values_to = "Value")
+spe_order<-ld.highLdProp.summ$SpeciesID[order(ld.highLdProp.summ$Max, decreasing = T)]
+
+p_high_ld_prop <- ggplot(ld.wide.full, aes(x=as.character(SpeciesID), y=`LD_High LD proportion`))+
+  geom_line(data=ld.highLdProp.summ.long, aes(x = as.character(ld.highLdProp.summ.long$SpeciesID), y = ld.highLdProp.summ.long$Value, group = SpeciesID))+
+  geom_point(aes(color = Cohort), alpha = 0.7)+
+  scale_x_discrete(limits = spe_order)+
+  scale_y_continuous(expand = c(0,0)) +
+  scale_color_manual(name=NULL, 
+                     breaks = cohort_order,
+                     labels = cohort_label,
+                     values = cohort_color)+
+  ylab("Proportion")+
+  theme_bw()+
+  theme(legend.position = "bottom",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+pdf("05.popStructLd/High_LD_prop_dot.pdf", width = 13,height = 4.5)
+print(p_high_ld_prop)
+dev.off()
+
+p_ld_prop_density <- ld.highLdProp.summ  %>%
+  ggplot(aes(x=Range))+
+  geom_density(color = pal_material("red")(6)[c(5)], fill = pal_material("red")(6)[c(5)], alpha = 0.2)+
+  geom_rug(color = pal_material("red")(6)[c(5)], alpha = 0.5,length = unit(0.05, "npc"))+
+  geom_vline(xintercept = mean(ld.highLdProp.summ$Range), color = "#ed2f6a", linetype="dashed")+
+  ylab('Density')+
+  xlab('Proportion of linked SNP pairs')+
+  scale_y_continuous(expand = c(0,0))+
+  theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line.x =  element_line(),
+        axis.line.y = element_line(),
+        legend.position = "bottom",
+        legend.key = element_rect(fill = NA), 
+        panel.grid.major = element_line(colour = NA),
+        panel.grid.minor = element_line(colour = NA), 
+        panel.background = element_rect(fill = NA))
+
+pdf("05.popStructLd/ld_prop_density.pdf", height = 3, width = 3)
+print(p_ld_prop_density)
+dev.off() 
+
+p_ld_prop_mean_density <- ld.highLdProp.summ  %>%
+  ggplot(aes(x=Mean))+
+  geom_density(color = pal_material("blue")(6)[c(5)], fill = pal_material("blue")(6)[c(5)], alpha = 0.2)+
+  geom_rug(color = pal_material("blue")(6)[c(5)], alpha = 0.5,length = unit(0.05, "npc"))+
+  geom_vline(xintercept = mean(ld.highLdProp.summ$Range), color = "#ed2f6a", linetype="dashed")+
+  ylab('Density')+
+  xlab('Proportion of linked SNP pairs')+
+  scale_y_continuous(expand = c(0,0))+
+  theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line.x =  element_line(),
+        axis.line.y = element_line(),
+        legend.position = "bottom",
+        legend.key = element_rect(fill = NA), 
+        panel.grid.major = element_line(colour = NA),
+        panel.grid.minor = element_line(colour = NA), 
+        panel.background = element_rect(fill = NA))
+
+pdf("05.popStructLd/ld_prop_mean_density.pdf", height = 3, width = 3)
+print(p_ld_prop_mean_density)
+dev.off() 
+```
+

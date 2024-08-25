@@ -1,0 +1,364 @@
+---
+title: "MWAS summary"
+author: "Daoming Wang"
+date: "2023/12/04"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+mwasCoh <- fread("00.rawData/mwas/metaAnalysis/all.EMMAX.mwas.cohortSpecific",sep = "\t")
+mwasSumm.long <- read.table("00.rawData/mwas/metaAnalysis/all.EMMAX.summ.tsv", sep = "\t", header = T, quote = "")
+gwasPara  <- read.table("06.MWAS_preparation/mwasPara.tsv", sep = "\t", header = F)
+phenInfo<-read.table("02.phenotype_summary/phenInfoSumm.tsv", sep = "\t",header = T, check.names = F)
+speInfo<-read.table("03.genotypeSummary/speInfoSumm.tsv",sep = "\t", header = T, check.names = F)
+
+load("01.cleanData/phenotype/full_phen.RData")
+sampleCohorts<-read.table("00.rawData/cohortList/sampleCohorts.tsv",header = F)
+#snpAnno <- fread("00.rawData/snpAnno/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.base1.perCohort.geno0.9.maf0.05.snpN1000.annotation.tsv", sep = "\t", header = F)
+snpInfo <- fread("00.rawData/snpAnno/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.base1.perCohort.geno0.9.maf0.05.snpN1000.pvar.tsv")
+
+pt.af.raw <- fread("00.rawData/mwas/prioritizedGenotype/EMMAX.mwasCoh.cl.pt.74415SNPs.AF.tsv",sep = "\t", na.strings = ".") %>%
+  as.matrix(rownames = 1)
+```
+
+## 2 Clean tables
+### 2.1 Clean genotypes
+
+```{r 2.1, eval=FALSE}
+ptDS <- pt.af.raw
+colnames(ptDS) <- colnames(ptDS) %>% str_replace_all(":.*", "") %>% str_replace_all(".*]", "")
+ptDS <-t(ptDS)
+
+ptGT <- ptDS
+ptGT[ptDS==0]<-"Ref"
+ptGT[ptDS > 0 & ptDS < 1]<-"Het"
+ptGT[ptDS==1]<-"Alt"
+```
+
+### 2.2 Cohort-specific association summary
+
+```{r 2.2}
+# Clean cohort-specific associations
+mwasCoh.cl <- mwasCoh
+colnames(mwasCoh.cl)[1]<-"Phenotype"
+mwasCoh.cl<-mwasCoh.cl[,-3]
+mwasCoh.cl$Algorithm <- "REML"
+mwasCoh.cl$Phenotype <- mwasCoh.cl$Phenotype %>% str_replace_all(".EMMAX.mwas.cohortSpecific", "")
+
+mwasCoh.cl$CHR <- mwasCoh.cl$SNP %>% str_replace_all("_.*", "")
+mwasCoh.cl$BP  <- mwasCoh.cl$SNP %>% str_replace_all(".*_", "")
+mwasCoh.cl<-mwasCoh.cl[-grep("TLCA|TUDCA|TLCA_p|TUDCA_p", mwasCoh.cl$Phenotype),]
+
+mwasCoh.cl$A1 <- mwasCoh.cl$SNP %>% match(snpInfo$V3) %>% snpInfo$V4[.]
+mwasCoh.cl$A2 <- mwasCoh.cl$SNP %>% match(snpInfo$V3) %>% snpInfo$V5[.]
+
+mwasCoh.cl$Allele1<-mwasCoh.cl$Allele1 %>% toupper()
+mwasCoh.cl$Allele2<-mwasCoh.cl$Allele2 %>% toupper()
+
+# tt <- mwasCoh.cl[,-c(17:57)] %>% na.omit()
+mwasCoh.cl.sign <- ifelse(mwasCoh.cl$A1 == mwasCoh.cl$Allele1, 1, -1)
+mwasCoh.cl$Effect <- mwasCoh.cl$Effect * mwasCoh.cl.sign
+
+# Clean summary
+mwasSumm <- pivot_wider(mwasSumm.long, names_from = Parameter, values_from = Value) %>% as.data.frame
+for (i in c(2:13,16:36)) {
+  mwasSumm[,i] <- as.numeric(mwasSumm[,i])
+}
+
+mwasSumm<-mwasSumm[-grep("TLCA|TUDCA|TLCA_p|TUDCA_p", mwasSumm$Phenotype),]
+
+mwasSumm$Lowest.P.meta[is.infinite(mwasSumm$Lowest.P.meta)]<-NA
+mwasSumm$Lowest.P.meta.nohet[is.infinite(mwasSumm$Lowest.P.meta.nohet)]<-NA
+mwasSumm$N.SNP.metaSig <- mwasSumm$N.SNP.metaSpeWideSig + mwasSumm$N.SNP.metaMetaWideSig + mwasSumm$N.SNP.metaStudyWideSig 
+mwasSumm$N.SNP.cohSig <- rowSums(mwasSumm[,19:36])
+
+mwasSumm.sort <- dplyr::arrange(mwasSumm, N.SNP.cohSig)
+mwasSumm.sort$Phenotype <- mwasSumm.sort$Phenotype %>% str_replace_all(".EMMAX", "")
+mwasSumm.sort$Algorithm <- "REML"
+mwasSumm.sort$N.SNP.Sig <- mwasSumm.sort$N.SNP.metaStudyWideSig+mwasSumm.sort$N.SNP.metaMetaWideSig+mwasSumm.sort$N.SNP.metaSpeWideSig
+mwasSumm.sort <- cbind(mwasSumm.sort$Phenotype %>% match(phenInfo$UnifiedName) %>% phenInfo[.,c(1,2,3,5,6,7)], mwasSumm.sort)
+
+if(!dir.exists("10.cohSpeQC")){dir.create("10.cohSpeQC")}
+write.table(mwasSumm.sort,"10.cohSpeQC/EMMAX.cohSumm.beforeQC.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+```
+
+### 2.3 Cohort-specific associations before QC
+
+```{r 2.3}
+mwasCoh.cl.pt <- mwasCoh.cl
+mwasCoh.cl.pt$ImpactLevel <- mwasCoh.cl.pt$Impact %>% match(annotationType) %>% annotationImpact[.]
+mwasCoh.cl.pt$FunctionKnown <- ! (mwasCoh.cl.pt$Gene == mwasCoh.cl.pt$Annotation)
+
+mwasCoh.cl.pt <- cbind(mwasCoh.cl.pt$CHR %>% match(speInfo$`Species ID`) %>% speInfo[.,23:31], mwasCoh.cl.pt)
+mwasCoh.cl.pt <- cbind(mwasCoh.cl.pt$Phenotype %>% match(phenInfo$UnifiedName) %>% phenInfo[.,c(1,2,3,5,6,7)], mwasCoh.cl.pt)
+colnames(mwasCoh.cl.pt)[c(1,2,3,9)] <- c("PhenSuperClass", "PhenClass", "PhenSubClass","Class")
+
+mwasCoh.cl.pt.snp <- unique(mwasCoh.cl.pt$SNP) %>% as.data.frame()
+
+write.table(mwasCoh.cl.pt,"10.cohSpeQC/EMMAX.mwasCoh.clean.sig.beforeQC.tsv",
+            sep = "\t", row.names = F, col.names = T, quote = F)
+write.table(mwasCoh.cl.pt.snp,"10.cohSpeQC/EMMAX.mwasCoh.cl.pt.74415SNPs.tsv", 
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+## 3 Permutation test
+
+```{r 3, eval=FALSE}
+mwasCoh.cl.pt.perm <- matrix(NA, nrow = nrow(mwasCoh.cl.pt), ncol = 20) %>% as.data.frame()
+colnames(mwasCoh.cl.pt.perm) <- c("SNP", "Phenotype",
+                                   "R.original.dmp", "P.original.dmp", "P.perm.dmp",
+                                   "R.original.lld1", "P.original.lld1", "P.perm.lld1",
+                                   "R.original.300ob", "P.original.300ob", "P.perm.300ob",
+                                   "R.original.500fg_fsk", "P.original.500fg_fsk", "P.perm.500fg_fsk",
+                                   "R.original.ibd", "P.original.ibd", "P.perm.ibd",
+                                   "R.original.300tzfg", "P.original.300tzfg", "P.perm.300tzfg")
+
+for (i in 1:nrow(mwasCoh.cl.pt)) { # 
+#  i <- 1
+  cat(paste(i,"\t"))
+  snp_i  <- mwasCoh.cl.pt$SNP[i]
+#  snp_i <- "102274_1617604"
+  phen_i <- mwasCoh.cl.pt$Phenotype[i]
+  df_i <- data.frame(ID = sampleCohorts$V1,
+                     Cohort = sampleCohorts$V2,
+                     SNP.dosage = ptDS[match(sampleCohorts$V1, rownames(ptDS)),
+                                       match(snp_i, colnames(ptDS))],
+                     SNP.genotype = ptGT[match(sampleCohorts$V1, rownames(ptGT)),
+                                         match(snp_i, colnames(ptGT))],
+                     Phenotype = full_phen[match(sampleCohorts$V1, rownames(full_phen)),
+                                           match(phen_i, colnames(full_phen))]
+                     ) %>% na.omit()
+  
+  set.seed(42)
+  mwasCoh.cl.pt.perm$SNP[i]       <- snp_i
+  mwasCoh.cl.pt.perm$Phenotype[i] <- phen_i
+  # dmp
+  if(sum(df_i$Cohort=="dmp")>0){
+      spearman_i <- cor.test(df_i$Phenotype[df_i$Cohort=="dmp"],df_i$SNP.dosage[df_i$Cohort=="dmp"], method = "spearman")
+      mwasCoh.cl.pt.perm$R.original.dmp[i] <- spearman_i$estimate
+      mwasCoh.cl.pt.perm$P.original.dmp[i] <- spearman_i$p.value
+      try(mwasCoh.cl.pt.perm$P.perm.dmp[i]     <- spearman_test(df_i$Phenotype[df_i$Cohort=="dmp"] ~ df_i$SNP.dosage[df_i$Cohort=="dmp"], 
+                        distribution = approximate(nresample = 999)) %>% pvalue, silent = T)
+  }
+  
+  # lld1
+  if(sum(df_i$Cohort=="lld1")>0){
+      spearman_i <- cor.test(df_i$Phenotype[df_i$Cohort=="lld1"],df_i$SNP.dosage[df_i$Cohort=="lld1"], method = "spearman")
+      mwasCoh.cl.pt.perm$R.original.lld1[i] <- spearman_i$estimate
+      mwasCoh.cl.pt.perm$P.original.lld1[i] <- spearman_i$p.value
+      try(mwasCoh.cl.pt.perm$P.perm.lld1[i]     <- spearman_test(df_i$Phenotype[df_i$Cohort=="lld1"] ~ df_i$SNP.dosage[df_i$Cohort=="lld1"], 
+                        distribution = approximate(nresample = 999)) %>% pvalue, silent = T)
+  }
+  
+    # 300ob
+  if(sum(df_i$Cohort=="300ob")>0){
+      spearman_i <- cor.test(df_i$Phenotype[df_i$Cohort=="300ob"],df_i$SNP.dosage[df_i$Cohort=="300ob"], method = "spearman")
+      mwasCoh.cl.pt.perm$R.original.300ob[i] <- spearman_i$estimate
+      mwasCoh.cl.pt.perm$P.original.300ob[i] <- spearman_i$p.value
+      try(mwasCoh.cl.pt.perm$P.perm.300ob[i]     <- 
+        spearman_test(df_i$Phenotype[df_i$Cohort=="300ob"] ~ df_i$SNP.dosage[df_i$Cohort=="300ob"], 
+                      distribution = approximate(nresample = 999)) %>% pvalue, silent = T)
+  }
+  
+    # 500fg_fsk
+  if(sum(df_i$Cohort=="500fg_fsk")>0){
+      spearman_i <- cor.test(df_i$Phenotype[df_i$Cohort=="500fg_fsk"],df_i$SNP.dosage[df_i$Cohort=="500fg_fsk"], method = "spearman")
+      mwasCoh.cl.pt.perm$R.original.500fg_fsk[i] <- spearman_i$estimate
+      mwasCoh.cl.pt.perm$P.original.500fg_fsk[i] <- spearman_i$p.value
+      try(mwasCoh.cl.pt.perm$P.perm.500fg_fsk[i]     <- 
+        spearman_test(df_i$Phenotype[df_i$Cohort=="500fg_fsk"] ~ df_i$SNP.dosage[df_i$Cohort=="500fg_fsk"], 
+                      distribution = approximate(nresample = 999)) %>% pvalue, silent = T)
+  }
+  
+    # ibd
+  if(sum(df_i$Cohort=="ibd")>0){
+      spearman_i <- cor.test(df_i$Phenotype[df_i$Cohort=="ibd"],df_i$SNP.dosage[df_i$Cohort=="ibd"], method = "spearman")
+      mwasCoh.cl.pt.perm$R.original.ibd[i] <- spearman_i$estimate
+      mwasCoh.cl.pt.perm$P.original.ibd[i] <- spearman_i$p.value
+      try(mwasCoh.cl.pt.perm$P.perm.ibd[i]     <- 
+        spearman_test(df_i$Phenotype[df_i$Cohort=="ibd"] ~ df_i$SNP.dosage[df_i$Cohort=="ibd"], 
+                      distribution = approximate(nresample = 999)) %>% pvalue, silent = T)
+  }
+  
+    # 300tzfg
+  if(sum(df_i$Cohort=="300tzfg")>0){
+      spearman_i <- cor.test(df_i$Phenotype[df_i$Cohort=="300tzfg"],df_i$SNP.dosage[df_i$Cohort=="300tzfg"], method = "spearman")
+      mwasCoh.cl.pt.perm$R.original.300tzfg[i] <- spearman_i$estimate
+      mwasCoh.cl.pt.perm$P.original.300tzfg[i] <- spearman_i$p.value
+      try(mwasCoh.cl.pt.perm$P.perm.300tzfg[i]     <- 
+        spearman_test(df_i$Phenotype[df_i$Cohort=="300tzfg"] ~ df_i$SNP.dosage[df_i$Cohort=="300tzfg"], 
+                        distribution = approximate(nresample = 999)) %>% pvalue, silent = T)
+  }
+}
+
+saveRDS(mwasCoh.cl.pt.perm, file = "10.cohSpeQC/mwasCoh.cl.pt.perm.rds")
+mwasCoh.cl.pt.perm <- readRDS("10.cohSpeQC/mwasCoh.cl.pt.perm.rds")
+write.table(mwasCoh.cl.pt.perm, "10.cohSpeQC/mwasCoh.cl.pt.perm.tsv",sep = "\t", row.names = F, col.names = T, quote = F)
+```
+
+## 4 Merge results
+
+```{r 4}
+mwasCoh.cl.pt.perm <- readRDS("10.cohSpeQC/mwasCoh.cl.pt.perm.rds")
+
+mwasCoh.cl.pt.full <- data.frame(
+  mwasCoh.cl.pt[,1:22],
+  mwasCoh.cl.pt[,23:29],
+  
+  R.Spearman.dmp = mwasCoh.cl.pt.perm$R.original.dmp,
+  P.Spearman.dmp = mwasCoh.cl.pt.perm$P.original.dmp,
+  P.PermSpearman.dmp = mwasCoh.cl.pt.perm$P.perm.dmp,
+  QC.dmp = NA,
+  
+  mwasCoh.cl.pt[,30:36],
+  R.Spearman.lld1 = mwasCoh.cl.pt.perm$R.original.lld1,
+  P.Spearman.lld1 = mwasCoh.cl.pt.perm$P.original.lld1,
+  P.PermSpearman.lld1 = mwasCoh.cl.pt.perm$P.perm.lld1,
+  QC.lld1 = NA,
+  
+  mwasCoh.cl.pt[,37:43],
+  R.Spearman.300ob = mwasCoh.cl.pt.perm$R.original.300ob,
+  P.Spearman.300ob = mwasCoh.cl.pt.perm$P.original.300ob,
+  P.PermSpearman.300ob = mwasCoh.cl.pt.perm$P.perm.300ob,
+  QC.300ob = NA,
+  
+  mwasCoh.cl.pt[,44:50],
+  R.Spearman.500fg_fsk = mwasCoh.cl.pt.perm$R.original.500fg_fsk,
+  P.Spearman.500fg_fsk = mwasCoh.cl.pt.perm$P.original.500fg_fsk,
+  P.PermSpearman.500fg_fsk = mwasCoh.cl.pt.perm$P.perm.500fg_fsk,
+  QC.500fg_fsk = NA,
+  
+  mwasCoh.cl.pt[,51:57],
+  R.Spearman.ibd = mwasCoh.cl.pt.perm$R.original.ibd,
+  P.Spearman.ibd = mwasCoh.cl.pt.perm$P.original.ibd,
+  P.PermSpearman.ibd = mwasCoh.cl.pt.perm$P.perm.ibd,
+  QC.ibd = NA,
+  
+  mwasCoh.cl.pt[,58:64],
+  R.Spearman.300tzfg = mwasCoh.cl.pt.perm$R.original.300tzfg,
+  P.Spearman.300tzfg = mwasCoh.cl.pt.perm$P.original.300tzfg,
+  P.PermSpearman.300tzfg = mwasCoh.cl.pt.perm$P.perm.300tzfg,
+  QC.300tzfg = NA,
+  
+  mwasCoh.cl.pt[,65:68],
+  Nominal_sig_cohort_N.QC = NA,
+  Nominal_sig_cohort_direction.QC = NA,
+  Overall.QC = NA,
+  mwasCoh.cl.pt[,69:87]
+)
+
+# QC
+mwasCoh.cl.pt.full$QC.dmp[(mwasCoh.cl.pt.full$P.dmp < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.dmp < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.dmp > 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.dmp > 0)] <- "+"
+mwasCoh.cl.pt.full$QC.dmp[(mwasCoh.cl.pt.full$P.dmp < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.dmp < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.dmp < 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.dmp < 0)] <- "-"
+
+mwasCoh.cl.pt.full$QC.lld1[(mwasCoh.cl.pt.full$P.lld1 < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.lld1 < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.lld1 > 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.lld1 > 0)] <- "+"
+mwasCoh.cl.pt.full$QC.lld1[(mwasCoh.cl.pt.full$P.lld1 < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.lld1 < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.lld1 < 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.lld1 < 0)] <- "-"
+
+mwasCoh.cl.pt.full$QC.300ob[(mwasCoh.cl.pt.full$P.300ob < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.300ob < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.300ob > 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.300ob > 0)] <- "+"
+mwasCoh.cl.pt.full$QC.300ob[(mwasCoh.cl.pt.full$P.300ob < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.300ob < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.300ob < 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.300ob < 0)] <- "-"
+  
+mwasCoh.cl.pt.full$QC.500fg_fsk[(mwasCoh.cl.pt.full$P.500fg_fsk < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.500fg_fsk < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.500fg_fsk > 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.500fg_fsk > 0)] <- "+"
+mwasCoh.cl.pt.full$QC.500fg_fsk[(mwasCoh.cl.pt.full$P.500fg_fsk < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.500fg_fsk < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.500fg_fsk < 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.500fg_fsk < 0)] <- "-"
+
+mwasCoh.cl.pt.full$QC.ibd[(mwasCoh.cl.pt.full$P.ibd < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.ibd < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.ibd > 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.ibd > 0)] <- "+"
+mwasCoh.cl.pt.full$QC.ibd[(mwasCoh.cl.pt.full$P.ibd < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.ibd < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.ibd < 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.ibd < 0)] <- "-"
+
+mwasCoh.cl.pt.full$QC.300tzfg[(mwasCoh.cl.pt.full$P.300tzfg < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.300tzfg < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.300tzfg > 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.300tzfg > 0)] <- "+"
+mwasCoh.cl.pt.full$QC.300tzfg[(mwasCoh.cl.pt.full$P.300tzfg < 0.05) & 
+                             (mwasCoh.cl.pt.full$P.PermSpearman.300tzfg < 0.05) &
+                             (mwasCoh.cl.pt.full$BETA.300tzfg < 0) &
+                             (mwasCoh.cl.pt.full$R.Spearman.300tzfg < 0)] <- "-"
+
+mwasCoh.cl.pt.full$Nominal_sig_cohort_direction.QC <- paste(mwasCoh.cl.pt.full$QC.dmp,
+                                                             mwasCoh.cl.pt.full$QC.lld1,
+                                                             mwasCoh.cl.pt.full$QC.300ob,
+                                                             mwasCoh.cl.pt.full$QC.500fg_fsk,
+                                                             mwasCoh.cl.pt.full$QC.ibd,
+                                                             mwasCoh.cl.pt.full$QC.300tzfg,
+                                                             sep = ",")
+
+mwasCoh.cl.pt.full$Cohort_specific_SNP_sigCohort[is.na(mwasCoh.cl.pt.full$Cohort_specific_SNP_sigCohort)] <- "300tzfg"
+
+# Count number of nominally replicated cohorts for each association
+for (i in 1:nrow(mwasCoh.cl.pt.full)) {
+  mwasCoh.cl.pt.full$Nominal_sig_cohort_N.QC[i] <- mwasCoh.cl.pt.full$Nominal_sig_cohort_direction.QC[i] %>% str_split(",") %>% 
+    unlist %>% .[(. != "NA") & (. != "0")] %>% table %>% max
+}
+mwasCoh.cl.pt.full$Nominal_sig_cohort_N.QC[is.infinite(mwasCoh.cl.pt.full$Nominal_sig_cohort_N.QC)] <- 0
+mwasCoh.cl.pt.full$Overall.QC[mwasCoh.cl.pt.full$Nominal_sig_cohort_N.QC >= 1 ] <- "PASSED"
+write.table(mwasCoh.cl.pt.full, "10.cohSpeQC/mwasCoh.cl.pt.full.nofiltered.tsv",
+            sep = "\t", row.names = F, col.names = T, quote = F)
+
+mwasCoh.cl.pt.full.filtered <- mwasCoh.cl.pt.full %>% 
+  dplyr::filter(Overall.QC == "PASSED")
+write.table(mwasCoh.cl.pt.full.filtered, "10.cohSpeQC/mwasCoh.cl.pt.full.filtered.tsv",
+            sep = "\t", row.names = F, col.names = T, quote = F)
+```
+
+5 Genotype file
+
+```{r 5}
+coh.ptDS <- mwasCoh.cl.pt.full.filtered$SNP %>% unique %>% match(colnames(ptDS)) %>% ptDS[,.]
+
+if(!dir.exists("01.cleanData/genotype")){dir.create("01.cleanData/genotype")}
+saveRDS(coh.ptDS, "01.cleanData/genotype/coh.ptDS.rds")
+```

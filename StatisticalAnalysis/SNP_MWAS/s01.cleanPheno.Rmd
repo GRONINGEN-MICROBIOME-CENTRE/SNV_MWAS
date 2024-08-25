@@ -1,0 +1,611 @@
+---
+title: "Clean data"
+author: "Daoming Wang"
+date: "2023/8/2"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+speInfo<-read.table("00.rawData/speInfo/GT_Pro.909species.info.txt", sep = "\t", header = T, check.names = F)
+sampleCohorts<-read.table("00.rawData/cohortList/sampleCohorts.id.tsv",header = T)
+phenInfo.raw<-read.csv("00.rawData/phenInfo/phen_info.v1.0.tsv", sep = "\t", header = T, check.names = F)
+selected_spe<-read.table("00.rawData/speInfo/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.geno0.9.maf0.05.snpN1000.species.list")
+
+# DMP
+dmp_phen_raw<-read.csv("../../Dataset/rawdata/dag3_phentypes/dag3_metadata_merged_ready_v27.csv",row.names = "X")
+dmp_phen_info<-read.csv("../../Dataset/rawdata/dag3_phentypes/dag3_phenotype_info.txt",sep = "\t", header = T)
+dmp_phen_extra <- read.table("../../tmp/20230804_dag3body/dag3body/extraPhenotype.DMP.tsv")
+
+# LLD1
+lld1_phen_raw<-read.table("../../Dataset/cleandata/LLD_baseline_207factors/20200226_207allPhenotypes_1135patients.txt")
+lld1_inflam<-read.table("../../Dataset/rawdata/LLD_inflammation_markers/LLD_1060subjects_7inflammationMarkers_raw.txt",
+                        sep = "\t", header = T)
+lld1_read_raw<-read.table("../../Dataset/rawdata/Read_count/LLD.read_pair_number.tsv",sep = "\t",header = F)
+lld1_ba_raw<-read.table("../../Dataset/cleandata/Bile_acids/20200801_LLD_39BA_1135samples.tsv")
+lld1_tmao_raw<-read.csv("../../Dataset/cleandata/TMAO/20200901_300OB_5tmao_302samples.tsv",sep = "\t")
+lld1_scfa_raw<-read.table("../../Dataset/rawdata/LLD_fecal_SCFAs/LLD_fecal_SCFAs.txt")
+lld1_phen_extra <- read.table("../../tmp/20230804_dag3body/dag3body/extraPhenotype.LLD1.tsv")
+load("../../202102_IBD_metab/SV_IBD/01.cleanData/LLD/lld_fmetab.RData")
+lld1_id<-read.table("../../Dataset/rawdata/ID_KEY/key_LLD_GoNL_1659samples_v2.0_addSample.txt",sep = "\t",header = T)
+
+# LLD2
+lld2_phen_raw<-read.table("../../Dataset/rawdata/LLD2_phenotypes/data_pheno_LLD_base_fup_338pairs_77pheno_raw.txt",
+                          sep = "\t", header = T) %>% filter(time=="followup")
+
+# 300OB
+tob_phen_raw<-read.table("../../Dataset/rawdata/300OB_phenotypes/ob_130pheno_302samples.txt",
+                         sep = "\t", header = T)
+tob_read_raw<-read.table("../../Dataset/rawdata/Read_count/300OB.read_pair_number.tsv",sep = "\t",header = F)
+tob_ba_raw<-read.table("../../Dataset/cleandata/Bile_acids/20200801_300OB_39BA_302samples.tsv")
+tob_tmao_raw<-read.table("../../Dataset/cleandata/TMAO/20200901_300OB_5tmao_302samples.tsv", sep = "\t")
+tob_id<-read.table("../../Dataset/rawdata/ID_KEY/key_300OB_299samples.txt",sep = "\t",header = T)
+
+## IBD
+ibd_phen_raw<-read.table("../../Dataset/rawdata/IBD_phenotypes/CC_phenos_recoded_v2.txt", 
+                         sep = "\t", header = T) %>% filter(IBD == 2)
+ibd_read_raw<-read.table("../../Dataset/rawdata/Read_count/IBD.read_pair_number.tsv", sep = "\t", header = F)
+ibd_id_new<-read.table("../../202102_IBD_metab/SV_IBD/00.rawData/phen/rename_IBD.txt", header = T)
+load("../../202102_IBD_metab/SV_IBD/01.cleanData/IBD/ibd_phen.RData")
+load("../../202102_IBD_metab/SV_IBD/01.cleanData/IBD/ibd_fmetab.RData")
+ibd_sample<-read.table("../../202102_IBD_metab/SV_IBD/00.rawData/phen/selected_ibd_samples.txt")
+
+## 500FG
+ffg_phen_raw<-read.table("../../Dataset/rawdata/500FG_phenotypes/500FG_Demographics.txt",
+                         sep = "\t", header = T,check.names = F)
+ffg_phen_extra<-read.table("../../Dataset/rawdata/500FG_phenotypes/500FG_metadata_extra.csv",
+                         sep = ",", header = T,check.names = F)
+ffg_apk_read_raw<-read.table("../../Dataset/rawdata/Read_count/500FG_APK.read_pair_number.tsv", sep = "\t", header = F,check.names = F)
+ffg_fsk_read_raw<-read.table("../../Dataset/rawdata/Read_count/500FG_FSK.read_pair_number.tsv", sep = "\t", header = F,check.names = F)
+ffg_id<-read.csv("../../Dataset/rawdata/ID_KEY/ID_SASHA_500FG.txt",sep = "\t",header = T,check.names = F)
+
+## 300TZFG
+tzfg_phen_raw_1 <- read_excel("../../Dataset/rawdata/300TZFG/41467_2021_25213_MOESM3_ESM.xlsx", sheet = 1)
+tzfg_phen_raw_2 <- read_excel("../../Dataset/rawdata/300TZFG/41467_2021_25213_MOESM4_ESM.xlsx", sheet = 1)
+tzfg_read_raw <- read.table("../../Dataset/rawdata/Read_count/300TZFG.read_pair_number.tsv")
+tzfg_id <- read.csv("../../Dataset/rawdata/300TZFG/SraRunInfo.csv")
+```
+
+## 2 Phenotype information
+
+```{r 2}
+phenInfo<-phenInfo.raw %>% filter(UnifiedName != "")
+
+phenInfo<-unique(phenInfo[,c(1:4,6)])
+phenConver<-phenInfo.raw[phenInfo.raw$UnifiedName%in%phenInfo$UnifiedName,c(4,7,8)]
+
+phenInfo$AvailableCohort<-NA
+phenInfo$AvailableCohortNumber<-NA
+for (i in 1:nrow(phenInfo)) {
+#  i<-3
+  phenCohort<-phenConver[phenConver$UnifiedName == phenInfo$UnifiedName[i], 3]
+  phenInfo$AvailableCohort[i]<-paste(phenCohort, collapse = ";")
+  phenInfo$AvailableCohortNumber[i]<-length(phenCohort)
+}
+
+# Select phenotypes available in DMP or at least 2 cohorts
+#phenInfo<-which(grepl("dmp", phenInfo$AvailableCohort) | phenInfo$AvailableCohortNumber>=2) %>% phenInfo[.,]
+#phenConver<-which(phenConver$UnifiedName%in%phenInfo$UnifiedName) %>% phenConver[.,]
+
+if(!dir.exists("01.cleanData")){dir.create("01.cleanData")}
+if(!dir.exists("01.cleanData/phenInfo")){dir.create("01.cleanData/phenInfo")}
+write.table(phenInfo, "01.cleanData/phenInfo/phenInfo.tsv",sep = "\t",row.names = F ,col.names = T, quote = F)
+write.table(phenConver, "01.cleanData/phenInfo/phenConver.tsv",sep = "\t",row.names = F ,col.names = T, quote = F)
+```
+
+## 3 Clean phenotype data
+
+### 3.1 DMP
+
+```{r 3.1}
+dmp_phen<-dmp_phen_raw
+dmp_phen_extra_tmp <- rownames(dmp_phen) %>% match(rownames(dmp_phen_extra)) %>% dmp_phen_extra[.,c(6:9,12:23)]
+dmp_phen <- cbind(dmp_phen, dmp_phen_extra_tmp)
+
+# Derived phenotypes
+dmp_phen$WHR <- dmp_phen$WaistCircumference/dmp_phen$HipCircumference
+
+# Recode phenotypes
+dmp_phen$ANTHRO.Sex[dmp_phen$ANTHRO.Sex=="F"]<-0
+dmp_phen$ANTHRO.Sex[dmp_phen$ANTHRO.Sex=="M"]<-1
+dmp_phen$ANTHRO.Sex<-as.numeric(dmp_phen$ANTHRO.Sex)
+
+dmp_phen$EXP.EARLYLIFE.Birth.Mode[dmp_phen$EXP.EARLYLIFE.Birth.Mode=="Natural"]   <- 0
+dmp_phen$EXP.EARLYLIFE.Birth.Mode[dmp_phen$EXP.EARLYLIFE.Birth.Mode=="C.Section"] <- 1
+dmp_phen$EXP.EARLYLIFE.Birth.Mode<-as.numeric(dmp_phen$EXP.EARLYLIFE.Birth.Mode)
+
+dmp_phen$EXP.EARLYLIFE.Preg.Mother.Smoking[dmp_phen$EXP.EARLYLIFE.Preg.Mother.Smoking=="No"]   <- 0
+dmp_phen$EXP.EARLYLIFE.Preg.Mother.Smoking[dmp_phen$EXP.EARLYLIFE.Preg.Mother.Smoking=="Yes.less.during.preg"] <- 1
+dmp_phen$EXP.EARLYLIFE.Preg.Mother.Smoking[dmp_phen$EXP.EARLYLIFE.Preg.Mother.Smoking=="Yes.usual"] <- 2
+dmp_phen$EXP.EARLYLIFE.Preg.Mother.Smoking<-as.numeric(dmp_phen$EXP.EARLYLIFE.Preg.Mother.Smoking)
+
+dmp_phen$EXP.DIET.Probiotics[dmp_phen$EXP.DIET.Probiotics=="N"]   <- 0
+dmp_phen$EXP.DIET.Probiotics[dmp_phen$EXP.DIET.Probiotics=="Y.sometimes"] <- 1
+dmp_phen$EXP.DIET.Probiotics[dmp_phen$EXP.DIET.Probiotics=="Y.often"] <- 2
+dmp_phen$EXP.DIET.Probiotics[dmp_phen$EXP.DIET.Probiotics=="Y.always"] <- 3
+dmp_phen$EXP.DIET.Probiotics<-as.numeric(dmp_phen$EXP.DIET.Probiotics)
+
+dmp_phen$MED.DISEASES.Neurological.Headaches.Duration[dmp_phen$MED.DISEASES.Neurological.Headaches.Duration=="less than 6 months"]   <- 0
+dmp_phen$MED.DISEASES.Neurological.Headaches.Duration[dmp_phen$MED.DISEASES.Neurological.Headaches.Duration=="more than 6 months"] <- 1
+dmp_phen$MED.DISEASES.Neurological.Headaches.Duration<-as.numeric(dmp_phen$MED.DISEASES.Neurological.Headaches.Duration)
+
+dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften[dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften=="not at all"]   <- 0
+dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften[dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften=="several times a month"] <- 1
+dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften[dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften=="several times a week"] <- 2
+dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften[dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften=="every day"] <- 3
+dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften<-as.numeric(dmp_phen$MED.DISEASES.Neurological.Headaches.HowOften)
+
+dmp_phen$MED.HEALTH.RAND.Health.Change.1y[dmp_phen$MED.HEALTH.RAND.Health.Change.1y=="much worse than a year ago"]   <- -2
+dmp_phen$MED.HEALTH.RAND.Health.Change.1y[dmp_phen$MED.HEALTH.RAND.Health.Change.1y=="a little bit worse than a year ago"] <- -1
+dmp_phen$MED.HEALTH.RAND.Health.Change.1y[dmp_phen$MED.HEALTH.RAND.Health.Change.1y=="about the same as a year ago"] <- 0
+dmp_phen$MED.HEALTH.RAND.Health.Change.1y[dmp_phen$MED.HEALTH.RAND.Health.Change.1y=="a little bit better than a year ago"] <- 1
+dmp_phen$MED.HEALTH.RAND.Health.Change.1y[dmp_phen$MED.HEALTH.RAND.Health.Change.1y=="much better than a year ago"] <- 2
+dmp_phen$MED.HEALTH.RAND.Health.Change.1y<-as.numeric(dmp_phen$MED.HEALTH.RAND.Health.Change.1y)
+
+dmp_phen$MED.HEALTH.RAND.Health.General[dmp_phen$MED.HEALTH.RAND.Health.General=="poor"]   <- -1
+dmp_phen$MED.HEALTH.RAND.Health.General[dmp_phen$MED.HEALTH.RAND.Health.General=="mediocre"] <- 0
+dmp_phen$MED.HEALTH.RAND.Health.General[dmp_phen$MED.HEALTH.RAND.Health.General=="good"] <- 1
+dmp_phen$MED.HEALTH.RAND.Health.General[dmp_phen$MED.HEALTH.RAND.Health.General=="very good"] <- 2
+dmp_phen$MED.HEALTH.RAND.Health.General[dmp_phen$MED.HEALTH.RAND.Health.General=="excellent"] <- 3
+dmp_phen$MED.HEALTH.RAND.Health.General<-as.numeric(dmp_phen$MED.HEALTH.RAND.Health.General)
+
+dmp_phen$MED.INDICES.Fibrosis.Score.T1.lvl[dmp_phen$MED.INDICES.Fibrosis.Score.T1.lvl=="Minimal fibrosis"]   <- 1
+dmp_phen$MED.INDICES.Fibrosis.Score.T1.lvl[dmp_phen$MED.INDICES.Fibrosis.Score.T1.lvl=="Intermediate fibrosis"] <- 2
+dmp_phen$MED.INDICES.Fibrosis.Score.T1.lvl[dmp_phen$MED.INDICES.Fibrosis.Score.T1.lvl=="Severe fibrosis"] <- 3
+dmp_phen$MED.INDICES.Fibrosis.Score.T1.lvl<-as.numeric(dmp_phen$MED.INDICES.Fibrosis.Score.T1.lvl)
+
+dmp_phen$MED.INDICES.NAFLD.T1.CLASS[dmp_phen$MED.INDICES.NAFLD.T1.CLASS=="F0-F2"]   <- 1
+dmp_phen$MED.INDICES.NAFLD.T1.CLASS[dmp_phen$MED.INDICES.NAFLD.T1.CLASS=="Intermediate score"] <- 2
+dmp_phen$MED.INDICES.NAFLD.T1.CLASS[dmp_phen$MED.INDICES.NAFLD.T1.CLASS=="F3-F4"] <- 3
+dmp_phen$MED.INDICES.NAFLD.T1.CLASS<-as.numeric(dmp_phen$MED.INDICES.NAFLD.T1.CLASS)
+
+dmp_phen$MED.INDICES.FattyLiverIndex.T1.Class[dmp_phen$MED.INDICES.FattyLiverIndex.T1.Class=="Low"]   <- 1
+dmp_phen$MED.INDICES.FattyLiverIndex.T1.Class[dmp_phen$MED.INDICES.FattyLiverIndex.T1.Class=="Intermediate"] <- 2
+dmp_phen$MED.INDICES.FattyLiverIndex.T1.Class[dmp_phen$MED.INDICES.FattyLiverIndex.T1.Class=="High"] <- 3
+dmp_phen$MED.INDICES.FattyLiverIndex.T1.Class<-as.numeric(dmp_phen$MED.INDICES.FattyLiverIndex.T1.Class)
+
+dmp_phen$SOCIOEC.INCOME.Income.Month[dmp_phen$SOCIOEC.INCOME.Income.Month=="E.750.less"]     <- 1
+dmp_phen$SOCIOEC.INCOME.Income.Month[dmp_phen$SOCIOEC.INCOME.Income.Month=="E.750.to.1000"]  <- 2
+dmp_phen$SOCIOEC.INCOME.Income.Month[dmp_phen$SOCIOEC.INCOME.Income.Month=="E.1000.to.1500"] <- 3
+dmp_phen$SOCIOEC.INCOME.Income.Month[dmp_phen$SOCIOEC.INCOME.Income.Month=="E.1500.to.2000"] <- 4
+dmp_phen$SOCIOEC.INCOME.Income.Month[dmp_phen$SOCIOEC.INCOME.Income.Month=="E.2000.to.2500"] <- 5
+dmp_phen$SOCIOEC.INCOME.Income.Month[dmp_phen$SOCIOEC.INCOME.Income.Month=="E.2500.to.3000"] <- 6
+dmp_phen$SOCIOEC.INCOME.Income.Month[dmp_phen$SOCIOEC.INCOME.Income.Month=="E.3000.to.3500"] <- 7
+dmp_phen$SOCIOEC.INCOME.Income.Month[dmp_phen$SOCIOEC.INCOME.Income.Month=="E.3500.more"]    <- 8
+dmp_phen$SOCIOEC.INCOME.Income.Month<-as.numeric(dmp_phen$SOCIOEC.INCOME.Income.Month)
+
+dmp_phen$EXP.EARLYLIFE.LIVINGPLACE.child.1.4[dmp_phen$EXP.EARLYLIFE.LIVINGPLACE.child.1.4=="City centre"]   <- "City.centre"
+
+dmp_phen$MED.DISEASES.Rome3_IBS.factor[which(dmp_phen$MED.DISEASES.Rome3_IBS.factor == "0")] <- "NoIBS"
+
+dmp_phen[dmp_phen=="N"]<-0
+dmp_phen[dmp_phen=="Y"]<-1
+
+dmp_phen_tmp <- dmp_phen
+dmp_phen <- mutate_all(dmp_phen, function(x) as.numeric(as.character(x)))
+
+dmp_phen$EXP.EARLYLIFE.LIVINGPLACE.child.1.4 <- as.character(dmp_phen_tmp$EXP.EARLYLIFE.LIVINGPLACE.child.1.4)
+dmp_phen$META.POOP.COLLECTION_SEASON         <- as.character(dmp_phen_tmp$META.POOP.COLLECTION_SEASON)
+dmp_phen$MED.DISEASES.Rome3_IBS.factor       <- as.character(dmp_phen_tmp$MED.DISEASES.Rome3_IBS.factor)
+dmp_phen$META.BATCH                          <- as.character(dmp_phen_tmp$META.BATCH)
+
+# Convert variable names
+dmp_phen_processed<-dmp_phen[,(colnames(dmp_phen) %in% phenConver$Alias[phenConver$AliasCohort=="dmp"])]
+colnames(dmp_phen_processed) <- colnames(dmp_phen_processed) %>% 
+  match(., phenConver$Alias[phenConver$AliasCohort=="dmp"]) %>% 
+  phenConver$UnifiedName[phenConver$AliasCohort=="dmp"][.]
+
+# Extract DMP samples
+dmp.sample <- sampleCohorts$OldID[sampleCohorts$CohortId=="dmp"]
+dmp_phen_use<-dmp_phen_processed[match(dmp.sample, rownames(dmp_phen_processed)),]
+rownames(dmp_phen_use)<-dmp.sample
+
+## Filter out high missing rate phenotypes
+# dmp_phen_use <- dmp_phen_use[,colSums((!is.na(dmp_phen_use))) > 50]
+```
+
+### 3.2 LLD2-FSK
+
+```{r 3.2}
+# Extract LLD2-FSK samples
+lld2_fsk.sample <- data.frame(OldID = sampleCohorts$OldID[sampleCohorts$CohortId=="lld2_fsk"],
+                              NewID = sampleCohorts$NewID[sampleCohorts$CohortId=="lld2_fsk"])
+lld2_fsk_phen_use<-dmp_phen_processed[match(lld2_fsk.sample$OldID, rownames(dmp_phen_processed)),]
+rownames(lld2_fsk_phen_use)<- rownames(lld2_fsk_phen_use) %>% match(lld2_fsk.sample$OldID) %>% lld2_fsk.sample$NewID[.]
+```
+
+### 3.3 LLD1
+
+```{r 3.3}
+lld1.sample<-sampleCohorts$OldID[sampleCohorts$CohortId=="lld1"]
+lld1_read_raw$V1[match("9002000001328080", lld1_read_raw$V1)]<-"9002000001328080LL"
+lld1_read_raw$V1<-match(lld1_read_raw$V1, str_replace_all(lld1_id$LLD_bam_id,"fece_", "")) %>% lld1_id$LLD_GoNL_all_id[.]
+lld1_read<-match(lld1.sample,lld1_read_raw$V1) %>% lld1_read_raw[.,]
+lld1_read<-lld1_read[,-1] %>% as.data.frame
+colnames(lld1_read)<-c("CleanReadCount")
+rownames(lld1_read)<-lld1.sample
+
+lld1_scfa_nabs <- lld_fmetab[,997:1004]
+
+lld1_phen<-cbind(lld1_phen_raw, 
+                 lld1_phen_extra[match(lld1.sample, rownames(lld1_phen_extra)),],
+                 lld1_inflam[match(lld1.sample, rownames(lld1_inflam)),],
+                 lld1_ba_raw[match(lld1.sample, rownames(lld1_ba_raw)),],
+                 lld1_tmao_raw[match(lld1.sample, rownames(lld1_tmao_raw)),],
+                 lld1_scfa_raw[match(lld1.sample, rownames(lld1_scfa_raw)),],
+                 lld1_scfa_nabs[match(lld1.sample,rownames(lld1_scfa_nabs)),],
+                 lld1_read)
+
+lld1_phen_processed<-lld1_phen[,(colnames(lld1_phen) %in% phenConver$Alias[phenConver$AliasCohort=="lld1"])]
+colnames(lld1_phen_processed) <- colnames(lld1_phen_processed) %>% 
+  match(., phenConver$Alias[phenConver$AliasCohort=="lld1"]) %>% 
+  phenConver$UnifiedName[phenConver$AliasCohort=="lld1"][.]
+lld1_phen_use<-colnames(lld1_phen_processed) %in% phenInfo$UnifiedName %>% 
+  lld1_phen_processed[,.]
+rownames(lld1_phen_use)<-lld1.sample
+lld1_phen_use <- mutate_all(lld1_phen_use, function(x) as.numeric(as.character(x)))
+#lld1_phen_use$ID<-lld1.sample
+```
+
+### 3.4 LLD2-APK
+
+```{r 3.4}
+lld2_apk.sample<-sampleCohorts$OldID[sampleCohorts$CohortId=="lld2_apk"]
+
+##Phenotype encode
+lld2_phen_raw$antrop_gender.F1M2[lld2_phen_raw$antrop_gender.F1M2==1]<-0
+lld2_phen_raw$antrop_gender.F1M2[lld2_phen_raw$antrop_gender.F1M2==2]<-1
+lld2_phen_raw$sex<-as.numeric(lld2_phen_raw$antrop_gender.F1M2)
+
+##
+lld2_apk_phen_processed<-lld2_phen_raw[,(colnames(lld2_phen_raw) %in% phenConver$Alias[phenConver$AliasCohort=="lld2"])]
+colnames(lld2_apk_phen_processed) <- colnames(lld2_apk_phen_processed) %>% 
+  match(., phenConver$Alias[phenConver$AliasCohort=="lld2"]) %>% 
+  phenConver$UnifiedName[phenConver$AliasCohort=="lld2"][.]
+lld2_apk_phen_use<-colnames(lld2_apk_phen_processed) %in% phenInfo$UnifiedName %>% 
+  lld2_apk_phen_processed[,.]
+rownames(lld2_apk_phen_use)<-lld2_apk.sample
+lld2_apk_phen_use <- mutate_all(lld2_apk_phen_use, function(x) as.numeric(as.character(x)))
+
+rownames(lld2_apk_phen_use) <- rownames(lld2_apk_phen_use) %>% match(sampleCohorts$OldID) %>% sampleCohorts$NewID[.]
+
+lld2_apk_extra <- lld2_fsk_phen_use[rownames(lld2_apk_phen_use) %>% str_replace_all("_APK", "") %>% match(str_replace_all(rownames(lld2_fsk_phen_use), "_FSK", "")),
+                                    which(!(colnames(lld2_fsk_phen_use) %in% colnames(lld2_apk_phen_use)))]
+rownames(lld2_apk_extra) <- rownames(lld2_apk_phen_use)
+lld2_apk_phen_use <- cbind(lld2_apk_phen_use, lld2_apk_extra)
+
+## process lld2-fsk again
+lld2_fsk_extra <- lld2_apk_phen_use[rownames(lld2_fsk_phen_use) %>% str_replace_all("_APK", "") %>% match(str_replace_all(rownames(lld2_apk_phen_use), "_FSK", "")),
+                                    which(!(colnames(lld2_apk_phen_use) %in% colnames(lld2_fsk_phen_use)))]
+rownames(lld2_fsk_extra) <- rownames(lld2_fsk_extra)
+lld2_fsk_phen_use <- cbind(lld2_fsk_phen_use, lld2_fsk_extra)
+
+## Filter out high missing rate phenotypes
+# lld2_phen_use <- lld2_phen_use[,colSums((!is.na(lld2_phen_use))) > 50]
+```
+
+### 3.5 300OB
+
+```{r 3.5}
+tob.sample<-sampleCohorts$OldID[sampleCohorts$CohortId=="300ob"]
+
+## Phenotype encode
+tob_phen <- tob_phen_raw[match(tob.sample, rownames(tob_phen_raw)),]
+tob_phen$sex[tob_phen$sex==2]<-0
+tob_phen$sex<-as.numeric(tob_phen$sex)
+
+tob_phen$Antidiabetic.agent_insulin[tob_phen$Antidiabetic.agent_insulin>=1]<-1
+
+## Clean read table
+tob_read_raw$V1<-match(tob_read_raw$V1,tob_id$G_id) %>% tob_id$ID[.]
+tob_read<-match(tob.sample,tob_read_raw$V1) %>% tob_read_raw[.,-1] %>%as.data.frame
+colnames(tob_read)<-"CleanReadCount"
+rownames(tob_read)<-tob.sample
+
+## ba table
+tob_ba<-tob_ba_raw[match(tob.sample, rownames(tob_ba_raw)),]
+rownames(tob_ba)<-tob.sample
+
+## Merge phenotypes
+tob_phen<-cbind(tob_phen,
+                tob_read,
+                tob_ba[match(tob.sample, rownames(tob_ba)),],
+                tob_tmao_raw[match(tob.sample, rownames(tob_tmao_raw)),])
+
+
+tob_phen_processed<-tob_phen[,(colnames(tob_phen) %in% phenConver$Alias[phenConver$AliasCohort=="300ob"])]
+colnames(tob_phen_processed) <- colnames(tob_phen_processed) %>% 
+  match(., phenConver$Alias[phenConver$AliasCohort=="300ob"]) %>% 
+  phenConver$UnifiedName[phenConver$AliasCohort=="300ob"][.]
+tob_phen_use<-colnames(tob_phen_processed) %in% phenInfo$UnifiedName %>% 
+  tob_phen_processed[match(tob.sample, rownames(tob_phen_processed)),.]
+rownames(tob_phen_use)<-tob.sample
+tob_phen_use <- mutate_all(tob_phen_use, function(x) as.numeric(as.character(x)))
+tob_phen_use$Insulin<-tob_phen_use$Insulin * 0.144
+
+rownames(tob_phen_use) <- rownames(tob_phen_use) %>% match(sampleCohorts$OldID) %>% sampleCohorts$NewID[.]
+
+## Filter out high missing rate phenotypes
+#tob_phen_use <- tob_phen_use[,colSums((!is.na(tob_phen_use))) > 50]
+```
+
+### 3.6 IBD
+
+```{r 3.6}
+ibd.sample<-sampleCohorts$OldID[sampleCohorts$CohortId=="ibd"]
+
+## Phenotype encode
+rownames(ibd_phen_raw)<-ibd_phen_raw$ID
+ibd_phen <- ibd_phen_raw
+
+ibd_phen$host_Sex[ibd_phen$host_Sex==2]<-0
+ibd_phen$host_Sex<-as.numeric(ibd_phen$host_Sex)
+
+ibd_phen$IBD[ibd_phen$IBD==2]<-1
+ibd_phen$IBD<-as.numeric(ibd_phen$IBD)
+
+ibd_phen$host_SmokeCurrentSmoker[ibd_phen$host_SmokeCurrentSmoker==1]<-0
+ibd_phen$host_SmokeCurrentSmoker[ibd_phen$host_SmokeCurrentSmoker==2]<-1
+ibd_phen$host_SmokeCurrentSmoker<-as.numeric(ibd_phen$host_SmokeCurrentSmoker)
+
+ibd_phen$clinical_Calprot200[ibd_phen$clinical_Calprot200==1]<-0
+ibd_phen$clinical_Calprot200[ibd_phen$clinical_Calprot200==2]<-1
+ibd_phen$clinical_Calprot200<-as.numeric(ibd_phen$clinical_Calprot200)
+
+for (i in 15:58) {
+  ibd_phen[,i][ibd_phen[,i]==1]<-0
+  ibd_phen[,i][ibd_phen[,i]==2]<-1
+  ibd_phen[,i]<-as.numeric(ibd_phen[,i])
+}
+
+ibd_phen<-ibd_phen[match(ibd.sample, ibd_phen$ID), ]
+rownames(ibd_phen)<-ibd.sample
+## Clean read table
+ibd_read<-ibd_read_raw[ibd_read_raw$V1 %in% ibd_sample$V1,]
+ibd_read$V1[na.omit(match(ibd_read$V1, ibd_id_new$old))] <-match(ibd_read$V1, ibd_id_new$old) %>% na.omit %>% ibd_id_new$Classic[.]
+
+ibd_read<-match(ibd.sample,ibd_read$V1) %>% ibd_read[.,-1] %>%as.data.frame
+colnames(ibd_read)<-"CleanReadCount"
+rownames(ibd_read)<-ibd.sample
+## Merge phenotypes
+ibd_scfa_nabs <- ibd_fmetab[,997:1004]
+
+ibd_phen<-cbind(ibd_phen,
+                ibd_scfa_nabs[match(rownames(ibd_phen), rownames(ibd_scfa_nabs)),],
+                ibd_read)
+
+## Extract phenotypes for gwas
+ibd_phen_processed<-ibd_phen[,(colnames(ibd_phen) %in% phenConver$Alias[phenConver$AliasCohort=="ibd"])]
+colnames(ibd_phen_processed) <- colnames(ibd_phen_processed) %>% 
+  match(., phenConver$Alias[phenConver$AliasCohort=="ibd"]) %>% 
+  phenConver$UnifiedName[phenConver$AliasCohort=="ibd"][.]
+ibd_phen_use<-colnames(ibd_phen_processed) %in% phenInfo$UnifiedName %>% 
+  ibd_phen_processed[match(ibd.sample, rownames(ibd_phen_processed)),.]
+rownames(ibd_phen_use)<-ibd.sample
+ibd_phen_use <- mutate_all(ibd_phen_use, function(x) as.numeric(as.character(x)))
+
+rownames(ibd_phen_use) <- rownames(ibd_phen_use) %>% match(sampleCohorts$OldID) %>% sampleCohorts$NewID[.]
+
+## Filter out high missing rate phenotypes
+#ibd_phen_use <- ibd_phen_use[,colSums((!is.na(ibd_phen_use))) > 50]
+```
+
+### 3.7 500FG-APK
+
+```{r 3.7}
+ffg.sample<-sampleCohorts$OldID[sampleCohorts$CohortId=="500fg_apk"]
+
+## Merge tables of 500FG
+ffg_phen_raw<-cbind(ffg_phen_raw, ffg_phen_extra[match(ffg_phen_raw$ID_500fg, ffg_phen_extra$ID),])
+
+## Phenotype encode
+rownames(ffg_phen_raw)<-ffg_phen_raw$ID_500fg
+ffg_phen <- ffg_phen_raw
+
+ffg_phen$Sex[ffg_phen$Sex=="female"]<-0
+ffg_phen$Sex[ffg_phen$Sex=="male"]<-1
+ffg_phen$Sex<-as.numeric(ffg_phen$Sex)
+
+ffg_phen$MED.PPI[ffg_phen$MED.PPI=="N"]<-0
+ffg_phen$MED.PPI[ffg_phen$MED.PPI=="Y"]<-1
+ffg_phen$MED.PPI<-as.numeric(ffg_phen$MED.PPI)
+
+ffg_phen$MED.Statines[ffg_phen$MED.Statines=="N"]<-0
+ffg_phen$MED.Statines[ffg_phen$MED.Statines=="Y"]<-1
+ffg_phen$MED.Statines<-as.numeric(ffg_phen$MED.Statines)
+
+ffg_phen$Smoking.YN[ffg_phen$Smoking.YN=="N"]<-0
+ffg_phen$Smoking.YN[ffg_phen$Smoking.YN=="Y"]<-1
+ffg_phen$Smoking.YN<-as.numeric(ffg_phen$Smoking.YN)
+
+ffg_phen$MED.SSRI[ffg_phen$MED.SSRI=="N"]<-0
+ffg_phen$MED.SSRI[ffg_phen$MED.SSRI=="Y"]<-1
+ffg_phen$MED.SSRI<-as.numeric(ffg_phen$MED.SSRI)
+
+ffg_phen$Diabetes[ffg_phen$Diabetes=="N"]<-0
+ffg_phen$Diabetes[ffg_phen$Diabetes=="Y"]<-1
+ffg_phen$Diabetes<-as.numeric(ffg_phen$Diabetes)
+
+ffg_phen$MED.Antibiotics[ffg_phen$MED.Antibiotics=="N"]<-0
+ffg_phen$MED.Antibiotics[ffg_phen$MED.Antibiotics=="Y"]<-1
+ffg_phen$MED.Antibiotics<-as.numeric(ffg_phen$MED.Antibiotics)
+
+ffg_phen$MED.Antihistaminics[ffg_phen$MED.Antihistaminics=="N"]<-0
+ffg_phen$MED.Antihistaminics[ffg_phen$MED.Antihistaminics=="Y"]<-1
+ffg_phen$MED.Antihistaminics<-as.numeric(ffg_phen$MED.Antihistaminics)
+
+ffg_phen$MED.NSAID[ffg_phen$MED.NSAID=="N"]<-0
+ffg_phen$MED.NSAID[ffg_phen$MED.NSAID=="Y"]<-1
+ffg_phen$MED.NSAID<-as.numeric(ffg_phen$MED.NSAID)
+
+ffg_phen$MED.Oral.Contraceptives[ffg_phen$MED.Oral.Contraceptives=="N"]<-0
+ffg_phen$MED.Oral.Contraceptives[ffg_phen$MED.Oral.Contraceptives=="Y"]<-1
+ffg_phen$MED.Oral.Contraceptives<-as.numeric(ffg_phen$MED.Oral.Contraceptives)
+
+ffg_phen$Probiotics.Frequency[ffg_phen$Probiotics.Frequency=="4.never"]<-0
+ffg_phen$Probiotics.Frequency[ffg_phen$Probiotics.Frequency=="3.rarely"]<-1
+ffg_phen$Probiotics.Frequency[ffg_phen$Probiotics.Frequency=="2.monthly"]<-2
+ffg_phen$Probiotics.Frequency[ffg_phen$Probiotics.Frequency=="1.weekly" | ffg_phen$Probiotics.Frequency=="0.daily"]<-3
+ffg_phen$Probiotics.Frequency<-as.numeric(ffg_phen$Probiotics.Frequency)
+
+ffg_phen$SmokingDuration <- ffg_phen$Age - ffg_phen$Smoking.start.age
+
+
+# APK
+ffg_apk_phen<-ffg_phen[match(ffg.sample, rownames(ffg_phen)),]
+rownames(ffg_apk_phen)<-ffg.sample
+ffg_apk_phen$SmokingDuration <- ffg_apk_phen$Age - ffg_apk_phen$Smoking.start.age
+
+## clean read table
+ffg_read_tmp <- ffg_apk_read_raw
+ffg_read_tmp$V1<-match(ffg_read_tmp$V1,ffg_id$Project) %>% ffg_id$ID_500fg[.]
+ffg_read<-match(ffg.sample,ffg_read_tmp$V1) %>% ffg_read_tmp[.,-1] %>%as.data.frame
+colnames(ffg_read)<-"CleanReadCount"
+rownames(ffg_read)<-ffg.sample
+
+## merge phenotypes
+ffg_apk_phen<-cbind(ffg_apk_phen,ffg_read)
+
+ffg_phen_processed<-ffg_apk_phen[,which(colnames(ffg_apk_phen) %in% phenConver$Alias[phenConver$AliasCohort=="500fg"])]
+colnames(ffg_phen_processed) <- colnames(ffg_phen_processed) %>% 
+  match(., phenConver$Alias[phenConver$AliasCohort=="500fg"]) %>% 
+  phenConver$UnifiedName[phenConver$AliasCohort=="500fg"][.]
+
+ffg_apk_phen_use<-colnames(ffg_phen_processed) %in% phenInfo$UnifiedName %>% 
+  ffg_phen_processed[match(ffg.sample, rownames(ffg_phen_processed)),.]
+rownames(ffg_apk_phen_use)<-ffg.sample
+ffg_apk_phen_use <- mutate_all(ffg_apk_phen_use, function(x) as.numeric(as.character(x)))
+
+rownames(ffg_apk_phen_use) <- rownames(ffg_apk_phen_use) %>% match(sampleCohorts$OldID) %>% sampleCohorts$NewID[.]
+
+
+## Filter out high missing rate phenotypes
+#ffg_phen_use <- ffg_phen_use[,colSums((!is.na(ffg_phen_use))) > 50]
+```
+
+
+### 3.8 500FG-FSK
+
+```{r 3.8}
+ffg_fsk.sample <- sampleCohorts$OldID[sampleCohorts$CohortId=="500fg_fsk"] 
+
+# FSK
+ffg_fsk_phen<-ffg_phen[match(str_replace_all(ffg_fsk.sample, "_FSK", ""), rownames(ffg_phen)),]
+rownames(ffg_fsk_phen)<-ffg_fsk.sample
+
+## clean read table
+ffg_fsk_read_tmp <- ffg_fsk_read_raw
+ffg_fsk_read_tmp$V1 <- ffg_fsk_read_tmp$V1 %>% str_replace_all("_.*", "") %>% paste("_FSK", sep = "")
+ffg_fsk_read<-match(ffg_fsk.sample,ffg_fsk_read_tmp$V1) %>% ffg_fsk_read_tmp[.,-1] %>%as.data.frame
+colnames(ffg_fsk_read)<-"CleanReadCount"
+rownames(ffg_fsk_read)<-ffg_fsk.sample
+
+ffg_fsk_phen<-cbind(ffg_fsk_phen,ffg_fsk_read)
+
+ffg_fsk_phen_processed<-ffg_fsk_phen[,which(colnames(ffg_fsk_phen) %in% phenConver$Alias[phenConver$AliasCohort=="500fg"])]
+colnames(ffg_fsk_phen_processed) <- colnames(ffg_fsk_phen_processed) %>% 
+  match(., phenConver$Alias[phenConver$AliasCohort=="500fg"]) %>% 
+  phenConver$UnifiedName[phenConver$AliasCohort=="500fg"][.]
+
+ffg_fsk_phen_use<-colnames(ffg_fsk_phen_processed) %in% phenInfo$UnifiedName %>% 
+  ffg_fsk_phen_processed[match(ffg_fsk.sample, rownames(ffg_fsk_phen_processed)),.]
+rownames(ffg_fsk_phen_use)<-ffg_fsk.sample
+ffg_fsk_phen_use <- mutate_all(ffg_fsk_phen_use, function(x) as.numeric(as.character(x)))
+
+rownames(ffg_fsk_phen_use) <- rownames(ffg_fsk_phen_use) %>% match(sampleCohorts$OldID) %>% sampleCohorts$NewID[.]
+```
+
+### 3.9 300TZFG
+
+```{r 3.9}
+# Merge phenotype tables
+tzfg_phen_raw_2_tmp <- tzfg_phen_raw_1$PID %>% match(tzfg_phen_raw_2$PID) %>% tzfg_phen_raw_2[.,]
+tzfg_phen_raw_2_tmp <- tzfg_phen_raw_2_tmp[,which( (!colnames(tzfg_phen_raw_2_tmp)%in%colnames(tzfg_phen_raw_1)) )]
+tzfg_phen_raw <- cbind(tzfg_phen_raw_1, tzfg_phen_raw_2_tmp)
+
+# Add read
+tzfg_read_tmp <- tzfg_read_raw
+tzfg_read_tmp$V1 <- tzfg_read_tmp$V1 %>% match(tzfg_id$Run) %>% tzfg_id$SampleName[.]
+tzfg_read_tmp <- tzfg_phen_raw$PID %>% match(tzfg_read_tmp$V1) %>% tzfg_read_tmp[.,]
+tzfg_phen_raw$CleanReadCount <- tzfg_phen_raw$PID %>% match(tzfg_read_tmp$V1) %>% tzfg_read_tmp$V2[.]
+
+# Recode phenotypes
+tzfg_phen_raw$Gender[tzfg_phen_raw$Gender=="Female"]  <- 0
+tzfg_phen_raw$Gender[tzfg_phen_raw$Gender=="Male"]    <- 1
+tzfg_phen_raw$Gender<-as.numeric(tzfg_phen_raw$Gender)
+
+tzfg_phen_raw[tzfg_phen_raw=="No"]<-0
+tzfg_phen_raw[tzfg_phen_raw=="Yes"]<-1
+
+tzfg_phen_raw$Frequent_eat_meat[tzfg_phen_raw$Frequent_eat_meat=="<1x per week"]  <- 1
+tzfg_phen_raw$Frequent_eat_meat[tzfg_phen_raw$Frequent_eat_meat=="1-3x per week"] <- 2
+tzfg_phen_raw$Frequent_eat_meat[tzfg_phen_raw$Frequent_eat_meat=="3-6x per week"] <- 3
+tzfg_phen_raw$Frequent_eat_meat[tzfg_phen_raw$Frequent_eat_meat=="Everyday"]      <- 4
+tzfg_phen_raw$Frequent_eat_meat<-as.numeric(tzfg_phen_raw$Frequent_eat_meat)
+
+# Samples
+tzfg.sample <- sampleCohorts$OldID[sampleCohorts$CohortId=="300tzfg"] 
+tzfg_phen<-tzfg_phen_raw[match(tzfg.sample, tzfg_phen_raw$PID),]
+rownames(tzfg_phen)<-tzfg.sample
+
+# Convert phenotype
+tzfg_phen_processed<-tzfg_phen[,which(colnames(tzfg_phen) %in% phenConver$Alias[phenConver$AliasCohort=="300tzfg"])]
+colnames(tzfg_phen_processed) <- colnames(tzfg_phen_processed) %>% 
+  match(., phenConver$Alias[phenConver$AliasCohort=="300tzfg"]) %>% 
+  phenConver$UnifiedName[phenConver$AliasCohort=="300tzfg"][.]
+tzfg_phen_processed$PetsNowAny <- as.numeric(tzfg_phen_processed$PetsNowAny)
+tzfg_phen_processed$Vegetarian <- as.numeric(tzfg_phen_processed$Vegetarian)
+
+tzfg_phen_use<-colnames(tzfg_phen_processed) %in% phenInfo$UnifiedName %>% 
+  tzfg_phen_processed[match(tzfg.sample, rownames(tzfg_phen_processed)),.]
+rownames(tzfg_phen_use)<-tzfg.sample
+```
+
+### 3.10 Merge all phenotypes
+
+```{r 3.10}
+full_phen<-matrix(NA, nrow = nrow(sampleCohorts), ncol = length(phenInfo$UnifiedName)) %>% as.data.frame
+rownames(full_phen)<-sampleCohorts$NewID
+colnames(full_phen)<-phenInfo$UnifiedName
+
+full_phen[match(rownames(dmp_phen_use), rownames(full_phen)), match(colnames(dmp_phen_use), colnames(full_phen))]<-dmp_phen_use
+full_phen[match(rownames(lld1_phen_use), rownames(full_phen)), match(colnames(lld1_phen_use), colnames(full_phen))]<-lld1_phen_use
+full_phen[match(rownames(lld2_apk_phen_use), rownames(full_phen)), match(colnames(lld2_apk_phen_use), colnames(full_phen))]<-lld2_apk_phen_use
+full_phen[match(rownames(lld2_fsk_phen_use), rownames(full_phen)), match(colnames(lld2_fsk_phen_use), colnames(full_phen))]<-lld2_fsk_phen_use
+full_phen[match(rownames(ffg_apk_phen_use),  rownames(full_phen)), match(colnames(ffg_apk_phen_use),  colnames(full_phen))]<-ffg_apk_phen_use
+full_phen[match(rownames(ffg_fsk_phen_use),  rownames(full_phen)), match(colnames(ffg_fsk_phen_use),  colnames(full_phen))]<-ffg_fsk_phen_use
+full_phen[match(rownames(tob_phen_use),  rownames(full_phen)), match(colnames(tob_phen_use),  colnames(full_phen))]<-tob_phen_use
+full_phen[match(rownames(ibd_phen_use),  rownames(full_phen)), match(colnames(ibd_phen_use),  colnames(full_phen))]<-ibd_phen_use
+full_phen[match(rownames(tzfg_phen_use),  rownames(full_phen)), match(colnames(tzfg_phen_use),  colnames(full_phen))]<-tzfg_phen_use
+
+if(!dir.exists("01.cleanData")){dir.create("01.cleanData")}
+if(!dir.exists("01.cleanData/phenotype")){dir.create("01.cleanData/phenotype")}
+write.table(full_phen,"01.cleanData/phenotype/full_phen.tsv",sep = "\t")
+save(full_phen, file = "01.cleanData/phenotype/full_phen.RData")
+```
+

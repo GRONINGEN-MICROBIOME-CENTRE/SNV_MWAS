@@ -1,0 +1,241 @@
+---
+title: "MWAS examples"
+author: "Daoming Wang"
+date: "2024/05/20"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+mwasCoh.cl <- read.csv("11.cohSpeOverview/mwasCoh.cl.long.tsv", sep = "\t", header = T)
+mwasMeta.cl <- read.csv("09.metaAnalysisOverview/mwasMeta.cl.pt.full.filtered.tsv", sep = "\t", header = T)
+coh.ptDS  <- readRDS("01.cleanData/genotype/coh.ptDS.rds")
+meta.ptDS  <- readRDS("01.cleanData/genotype/meta.ptDS.rds")
+
+sampleCohorts<-read.table("00.rawData/cohortList/sampleCohorts.tsv",header = F)
+load("01.cleanData/phenotype/full_phen.RData")
+
+phenInfo<-read.table("02.phenotype_summary/phenInfoSumm.tsv", sep = "\t",header = T, check.names = F)
+speInfo<-read.table("03.genotypeSummary/speInfoSumm.tsv",sep = "\t", header = T, check.names = F)
+snpAnno <- readRDS("01.cleanData/snpAnno/snpAnno.rds")
+geneAnno.df <- readRDS("01.cleanData/annotation/geneAnno.df.rds")
+```
+
+### 1.3 Clean
+
+```{r 1.3}
+meta.ptDS.dmp <- sampleCohorts$V1[sampleCohorts$V2=="dmp"] %>% match(rownames(meta.ptDS)) %>% meta.ptDS[.,]
+coh.ptDS.dmp <- sampleCohorts$V1[sampleCohorts$V2=="dmp"] %>% match(rownames(coh.ptDS)) %>% coh.ptDS[.,]
+phen.dmp     <- sampleCohorts$V1[sampleCohorts$V2=="dmp"] %>% match(rownames(full_phen)) %>% full_phen[.,]
+
+ptDS.dmp <- cbind(meta.ptDS.dmp, coh.ptDS.dmp)
+```
+
+## 2 Select candidate groups
+
+```{r 2}
+mwasMeta.cl.dmp <- mwasMeta.cl %>% dplyr::filter( ( !is.na(QC.dmp) ) & (Phenotype != "Age") & (Phenotype != "Sex"))
+mwasCoh.cl.dmp  <- mwasCoh.cl  %>% dplyr::filter(Cohort_specific_SNP_sigCohort=="dmp" & (Phenotype != "Age") & (Phenotype != "Sex"))
+
+# Get SNPs associated with both exposure and intrinsic factors
+meta.phen.snp <- mwasMeta.cl %>% dplyr::select(PhenSuperClass, SNP)
+coh.phen.snp <- mwasCoh.cl.dmp %>% dplyr::select(PhenSuperClass, SNP)
+phen.snp <- rbind(meta.phen.snp, coh.phen.snp)
+exp.intrin.snp <- phen.snp %>% unique %>% .[,2] %>% table %>% sort(decreasing = T) %>% .[.>=2] %>% names
+
+# Meta-analysis
+mwasMeta.cl.dmp.exp    <- mwasMeta.cl.dmp[mwasMeta.cl.dmp$SNP %in% exp.intrin.snp,] %>% dplyr::filter(PhenSuperClass=="Exposure") %>% dplyr::select(16:33)
+mwasMeta.cl.dmp.intrin <- mwasMeta.cl.dmp[mwasMeta.cl.dmp$SNP %in% exp.intrin.snp,] %>% dplyr::filter(PhenSuperClass=="Intrinsic") %>% dplyr::select(16:33)
+
+# Single cohort 
+mwasCoh.cl.dmp.exp    <- mwasCoh.cl.dmp[mwasCoh.cl.dmp$SNP %in% exp.intrin.snp,] %>% dplyr::filter(PhenSuperClass=="Exposure") %>% dplyr::select(16:33)
+mwasCoh.cl.dmp.intrin <- mwasCoh.cl.dmp[mwasCoh.cl.dmp$SNP %in% exp.intrin.snp,] %>% dplyr::filter(PhenSuperClass=="Intrinsic") %>% dplyr::select(16:33)
+colnames(mwasMeta.cl.dmp.exp)    <- colnames(mwasCoh.cl.dmp.exp)
+colnames(mwasMeta.cl.dmp.intrin) <- colnames(mwasCoh.cl.dmp.intrin)
+
+# Merge
+mwas.cl.dmp.exp     <- rbind(mwasMeta.cl.dmp.exp, mwasCoh.cl.dmp.exp)
+mwas.cl.dmp.intrin  <- rbind(mwasMeta.cl.dmp.intrin , mwasCoh.cl.dmp.intrin)
+
+mwas.cl.dmp.exp.intrin <- full_join(mwas.cl.dmp.exp[,c(1, 3:18)], mwas.cl.dmp.intrin[,c(1, 3:18)], by = "SNP", suffix = c(".exp", ".intrin")) %>% na.omit()
+
+mwas.cl.dmp.exp.intrin$Exp.Intrin.Beta <- NA
+mwas.cl.dmp.exp.intrin$Exp.Intrin.P <- NA
+mwas.cl.dmp.exp.intrin$Exp.Intrin.N <- NA
+
+for (i in 1:nrow(mwas.cl.dmp.exp.intrin)) {
+#  i <- 180
+  
+  df_i <- data.frame(Exposure = phen.dmp[, mwas.cl.dmp.exp.intrin$Phenotype.exp[i]],
+                     Intrinsic = phen.dmp[, mwas.cl.dmp.exp.intrin$Phenotype.intrin[i]],
+                     Age = phen.dmp$Age,
+                     Sex = phen.dmp$Sex) %>%
+    na.omit()
+  
+  lm_res_i <- lm(Intrinsic ~ Exposure + Age + Sex, data = df_i) %>% summary()
+  mwas.cl.dmp.exp.intrin$Exp.Intrin.Beta[i] <- lm_res_i$coefficients[2,1]
+  mwas.cl.dmp.exp.intrin$Exp.Intrin.P[i] <- lm_res_i$coefficients[2,4]
+  mwas.cl.dmp.exp.intrin$Exp.Intrin.N[i] <- nrow(df_i)
+}
+
+mwas.cl.dmp.exp.intrin <- mwas.cl.dmp.exp.intrin %>% dplyr::filter(Exp.Intrin.P < 0.05 & (BETA.exp * BETA.intrin * Exp.Intrin.Beta > 0))
+exp_snp_intrin_df <- mwas.cl.dmp.exp.intrin %>% dplyr::select(Phenotype.exp, SNP, Phenotype.intrin)
+
+exp_snp_intrin_df.contin <- exp_snp_intrin_df %>% dplyr::filter(Phenotype.intrin %in% phenInfo$UnifiedName[phenInfo$ValueType!="Binary"])
+exp_snp_intrin_df.binary <- exp_snp_intrin_df %>% dplyr::filter(Phenotype.intrin %in% phenInfo$UnifiedName[phenInfo$ValueType=="Binary"])
+
+```
+
+## 3 Mediation analysis
+
+```{r 3, warning = FALSE, eval=FALSE}
+# Binary intrinsic factor
+date() 
+mediation_res.binary<-NULL
+for (i in 1:nrow(exp_snp_intrin_df.binary)) { # nrow(exp_snp_intrin_df.binary)
+#  i<-2
+  cat(paste(i,"\n"))
+  res_i<-lr_bimediation(as.character(exp_snp_intrin_df.binary[i,]),
+                        indvDf=phen.dmp, 
+                        dvDf1=ptDS.dmp, 
+                        dvDf2=phen.dmp, 
+                        covDf=phen.dmp, 
+                        covar=c('Age','Sex'))
+  
+  mediation_res.binary[[i]]<-res_i
+}
+date()
+
+snp_mediation.binary <- matrix(unlist(mediation_res.binary), ncol = 34, byrow = T) %>% as.data.frame
+colnames(snp_mediation.binary)<-names(mediation_res.binary[[1]])
+
+if (!dir.exists("14.mediationAnalysis")) {dir.create("14.mediationAnalysis")}
+if (!dir.exists("14.mediationAnalysis/RData")) {dir.create("14.mediationAnalysis/RData")}
+save(snp_mediation.binary, file = "14.mediationAnalysis/RData/snp_mediation.binary.RData")
+write.table(snp_mediation.binary,"14.mediationAnalysis/snp_mediation.binary.tsv",
+            sep = "\t", col.names = T, row.names = F, quote = F)
+
+# Continuous intrinsic factor
+date() 
+mediation_res.contin<-NULL
+for (i in 1:nrow(exp_snp_intrin_df.contin)) {
+#  i<-2
+  cat(paste(i,"\n"))
+  res_i<-lm_bimediation(as.character(exp_snp_intrin_df.contin[i,]),
+                        indvDf=phen.dmp, 
+                        dvDf1=ptDS.dmp, 
+                        dvDf2=phen.dmp, 
+                        covDf=phen.dmp, 
+                        covar=c('Age','Sex'))
+  
+  mediation_res.contin[[i]]<-res_i
+}
+date()
+
+snp_mediation.contin <- matrix(unlist(mediation_res.contin), ncol = 34, byrow = T) %>% as.data.frame
+colnames(snp_mediation.contin)<-names(mediation_res.contin[[1]])
+
+if (!dir.exists("14.mediationAnalysis")) {dir.create("14.mediationAnalysis")}
+if (!dir.exists("14.mediationAnalysis/RData")) {dir.create("14.mediationAnalysis/RData")}
+save(snp_mediation.contin, file = "14.mediationAnalysis/RData/snp_mediation.contin.RData")
+write.table(snp_mediation.contin,"14.mediationAnalysis/snp_mediation.contin.tsv",
+            sep = "\t", col.names = T, row.names = F, quote = F)
+```
+
+## 4 Clean and summary mediation analysis results
+
+```{r 4}
+load("14.mediationAnalysis/RData/snp_mediation.contin.RData")
+load("14.mediationAnalysis/RData/snp_mediation.binary.RData")
+
+snp_mediation <- rbind(snp_mediation.contin, snp_mediation.binary)
+snp_mediation[,c(5:34)]<-as.data.frame(sapply(snp_mediation[,c(5:34)], as.numeric))
+snp_mediation$dir1.ACME.fdr<-p.adjust(snp_mediation$dir1.ACME.p, method = 'fdr')
+snp_mediation$dir2.ACME.fdr<-p.adjust(snp_mediation$dir2.ACME.p, method = 'fdr')
+
+fdr.cutoff<-0.05
+snp_mediation$MediationDirection <- 'none'
+snp_mediation$MediationDirection[snp_mediation$dir1.ACME.fdr<fdr.cutoff & 
+                                     snp_mediation$dir1.Prop.mediated.p<0.05 &
+                                     snp_mediation$dir2.ACME.fdr<fdr.cutoff &
+                                     snp_mediation$dir2.Prop.mediated.p<0.05] <- 'both'
+snp_mediation$MediationDirection[snp_mediation$dir1.ACME.fdr<fdr.cutoff &
+                                     snp_mediation$dir1.Prop.mediated.p<0.05 &
+                                     snp_mediation$dir2.ACME.fdr>fdr.cutoff] <- 'indv_dv1_dv2'
+snp_mediation$MediationDirection[snp_mediation$dir1.ACME.fdr>fdr.cutoff &
+                                     snp_mediation$dir2.ACME.fdr<fdr.cutoff &
+                                     snp_mediation$dir2.Prop.mediated.p<0.05] <- 'indv_dv2_dv1'
+
+snp_mediation.sig <- snp_mediation %>% 
+  dplyr::filter( (MediationDirection == "both" &         (dir1.Prop.mediated > 0) & (dir2.Prop.mediated > 0)) |
+                 (MediationDirection == "indv_dv1_dv2" & (dir1.Prop.mediated > 0)) |
+                 (MediationDirection == "indv_dv2_dv1" & (dir2.Prop.mediated > 0)) 
+                 )
+
+
+snp_mediation.sig.full <- snp_mediation.sig$dv1 %>% str_replace_all("_.*", "") %>% match(speInfo$`Species ID`) %>% speInfo[.,23:31] %>% cbind(.,snp_mediation.sig)
+snp_mediation.sig.full <- snp_mediation.sig.full$dv2 %>% match(phenInfo$UnifiedName) %>% phenInfo[.,c(1,2,3,5,6,7)] %>% cbind(.,snp_mediation.sig.full)
+colnames(snp_mediation.sig.full)[1:6] <- paste("Intrinsic.", colnames(snp_mediation.sig.full)[1:6], sep = "")
+snp_mediation.sig.full <- snp_mediation.sig.full$indv %>% match(phenInfo$UnifiedName) %>% phenInfo[.,c(1,2,3,5,6,7)] %>% cbind(.,snp_mediation.sig.full)
+colnames(snp_mediation.sig.full)[1:6] <- paste("Exposure.", colnames(snp_mediation.sig.full)[1:6], sep = "")
+snp_mediation.sig.full <- snp_mediation.sig.full$dv1 %>% match(snpAnno$V1) %>% snpAnno[.,c(2,3,4,6,7)] %>% cbind(snp_mediation.sig.full, .)
+
+
+snp_mediation.sig.full <- snp_mediation.sig.full$V2 %>% match(geneAnno.df$ID) %>% geneAnno.df[.,c(2,4,6:8,10)] %>% cbind(snp_mediation.sig.full, .)
+write.table(snp_mediation.sig.full, "14.mediationAnalysis/snp_mediation.sig.full.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+```
+
+## 5 Visualization
+
+```{r 5}
+snp_mediation.sig.dir1 <- snp_mediation.sig.full %>% dplyr::filter( (MediationDirection != "indv_dv2_dv1") & Exposure.Class == "Diet" & (ImpactLevel != "Low") & (V2 != V4) )
+
+snp_mediation.sig.dir1$fre<-1
+sankey_colors<-c(wes_palette("Darjeeling1", length(unique(snp_mediation.sig.dir1$dv2)), type = "continuous")) 
+
+pdf("14.mediationAnalysis/mediation_dir1.sankey.pdf",width = 7,height = 3.5)
+ggplot(snp_mediation.sig.dir1,aes(axis1 = snp_mediation.sig.dir1$indv, 
+                                  axis2 = snp_mediation.sig.dir1$dv1, 
+                                  axis3 = snp_mediation.sig.dir1$dv2,
+                                  y= snp_mediation.sig.dir1$fre))+
+  scale_x_discrete(limits = c("Exposure factors", "Gut microbial SNVs", "Intrinsic phenotypes")) +
+  geom_alluvium(aes(fill = snp_mediation.sig.dir1$dv2),alpha = .55)+
+  geom_stratum(alpha = 0,color = adjustcolor( "white", alpha.f = 1),size=1.2)+
+  geom_text(stat = "stratum",cex=2,aes(label = after_stat(stratum))) +
+  scale_color_manual(values=sankey_colors)+
+  scale_fill_manual(values=sankey_colors)+
+  theme_minimal()+
+  theme(legend.position="none",
+        axis.text = element_text(size = 10),
+        axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        panel.grid=element_blank())
+dev.off()
+
+```
+

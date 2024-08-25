@@ -1,0 +1,1023 @@
+---
+title: "Age prediction"
+author: "Daoming Wang"
+date: "2023/12/13"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+age.snp     <- as.matrix(fread("00.rawData/AgePrediction/Age.indep0.49.raw", na.strings = "NA"), rownames=1)
+sampleCohort<-read.table("00.rawData/cohortList/sampleCohorts.tsv",header = F)
+load("01.cleanData/phenotype/full_phen.RData")
+
+bio.age.raw <- read.csv("../../Dataset/rawdata/BiologicalAge/Combined_data_uncorrected.tsv", sep = "\t", header = T)
+mwasMeta.assoc <- read.csv("09.metaAnalysisOverview/mwasMeta.cl.pt.full.filtered.tsv",sep = "\t", header = T)
+mwasCoh.assoc <- read.csv("11.cohSpeOverview/mwasCoh.cl.long.tsv",sep = "\t", header = T)
+phenInfoSumm <- read.table("02.phenotype_summary/phenInfoSumm.tsv", sep = "\t", header = T, check.names = F)
+
+lld1_scfa_raw<-read.table("../../Dataset/rawdata/LLD_fecal_SCFAs/LLD_fecal_SCFAs.txt",header = T, row.names = "ID")
+metab.lld1 <- read.table("../../Dataset/rawdata/LLD_plasma_untargeted_metabolome/data_1442samples_LLD_baseline_1183plasma_metabolites.txt", sep = "\t", header = T)
+metab.lld1.anno <- read.csv("../../Dataset/rawdata/LLD_plasma_untargeted_metabolome/key_lld_1183meta_annotation.txt", sep = "\t", header = T, quote = "")
+
+mbio.lld1.raw <- fread("00.rawData/mbio/results_metaphlan4.lld1.txt", sep = "\t") %>% as.matrix(rownames=1)
+lld1_id<-read.table("../../Dataset/rawdata/ID_KEY/key_LLD_GoNL_1659samples_v2.0_addSample.txt",sep = "\t",header = T)
+mbio.dmp.raw <- fread("../../Dataset/rawdata/DAG3_microbiome/metaphlan4/DAG3_merged_metaphlan4_2024Apr.txt", sep = "\t") %>% as.matrix(rownames=1)
+```
+
+## 2 Clean table
+
+### 2.1 Clean phenotype data
+
+```{r 2.1}
+# Clean SCFA data
+colnames(lld1_scfa_raw) <- c("Acetate", "Propionate", "Butyrate", "Valerate", "Caproate")
+
+# Clean biological age table
+bio.age.lld1 <- data.frame(ID = sampleCohort$V1[sampleCohort$V2=="lld1"],
+                           Age = sampleCohort$V1[sampleCohort$V2=="lld1"] %>% match(rownames(full_phen)) %>% full_phen$Age[.],
+                           match(sampleCohort$V1[sampleCohort$V2=="lld1"], bio.age.raw$Sample) %>% bio.age.raw[., c(2:5, 7, 9, 11, 13, 15, 17)])
+bio.age.lld1$dCT[is.na(bio.age.lld1$dCT)] <- NA
+for (i in 2:ncol(bio.age.lld1)) {
+  bio.age.lld1[,i]<-as.numeric(bio.age.lld1[,i])
+}
+```
+
+### 2.2 Clean genotype data
+
+```{r 2.2}
+# Clean genotype data
+age.genotype <- data.frame(age.snp[,6:ncol(age.snp)])
+rownames(age.genotype) <- age.snp[,1]
+for (i in 1:ncol(age.genotype)) {
+  age.genotype[,i]<-as.numeric(age.genotype[,i])
+}
+
+# Split train and test datasets
+train.id.list <- sampleCohort$V1[sampleCohort$V2=="dmp"]
+train.snp <- age.genotype[match(train.id.list, rownames(age.genotype)),]
+rownames(train.snp) <- train.id.list
+train.phen <- full_phen[match(train.id.list, rownames(full_phen)),]
+rownames(train.phen) <- train.id.list
+train.input <- cbind(train.phen, train.snp)
+
+# All non-DMP
+nondmp.test.id.list <- sampleCohort$V1[sampleCohort$V2!="dmp"]
+nondmp.test.phen <- full_phen[match(nondmp.test.id.list, rownames(full_phen)),]
+rownames(nondmp.test.phen) <- nondmp.test.id.list
+nondmp.test.snp <- age.genotype[match(nondmp.test.id.list, rownames(age.genotype)),]
+rownames(nondmp.test.snp) <- nondmp.test.id.list
+nondmp.test.input <-  nondmp.test.snp %>% data.frame(check.names = T)
+
+# LLD2-FSK
+lld2_fsk.test.id.list <- sampleCohort$V1[sampleCohort$V2=="lld2_fsk"]
+lld2_fsk.test.phen <- full_phen[match(lld2_fsk.test.id.list, rownames(full_phen)),]
+rownames(lld2_fsk.test.phen) <- lld2_fsk.test.id.list
+lld2_fsk.test.snp <- age.genotype[match(lld2_fsk.test.id.list, rownames(age.genotype)),]
+rownames(lld2_fsk.test.snp) <- lld2_fsk.test.id.list
+lld2_fsk.test.input <-  lld2_fsk.test.snp %>% data.frame(check.names = T)
+
+# LLD2-apk
+lld2_apk.test.id.list <- sampleCohort$V1[sampleCohort$V2=="lld2_apk"]
+lld2_apk.test.phen <- full_phen[match(lld2_apk.test.id.list, rownames(full_phen)),]
+rownames(lld2_apk.test.phen) <- lld2_apk.test.id.list
+lld2_apk.test.snp <- age.genotype[match(lld2_apk.test.id.list, rownames(age.genotype)),]
+rownames(lld2_apk.test.snp) <- lld2_apk.test.id.list
+lld2_apk.test.input <-  lld2_apk.test.snp %>% data.frame(check.names = T)
+
+# 500FG-FSK
+ffg_fsk.test.id.list <- sampleCohort$V1[sampleCohort$V2=="500fg_fsk"]
+ffg_fsk.test.phen <- full_phen[match(ffg_fsk.test.id.list, rownames(full_phen)),]
+rownames(ffg_fsk.test.phen) <- ffg_fsk.test.id.list
+ffg_fsk.test.snp <- age.genotype[match(ffg_fsk.test.id.list, rownames(age.genotype)),]
+rownames(ffg_fsk.test.snp) <- ffg_fsk.test.id.list
+ffg_fsk.test.input <-  ffg_fsk.test.snp %>% data.frame(check.names = T)
+
+# 300TZFG
+tzfg.test.id.list <- sampleCohort$V1[sampleCohort$V2=="300tzfg"]
+tzfg.test.phen <- full_phen[match(tzfg.test.id.list, rownames(full_phen)),]
+rownames(tzfg.test.phen) <- tzfg.test.id.list
+tzfg.test.snp <- age.genotype[match(tzfg.test.id.list, rownames(age.genotype)),]
+rownames(tzfg.test.snp) <- tzfg.test.id.list
+tzfg.test.input <-  tzfg.test.snp %>% data.frame(check.names = T)
+
+# IBD (Disease)
+ibd.test.id.list <- sampleCohort$V1[sampleCohort$V2=="ibd"]
+ibd.test.phen <- full_phen[match(ibd.test.id.list, rownames(full_phen)),]
+rownames(ibd.test.phen) <- ibd.test.id.list
+ibd.test.snp <- age.genotype[match(ibd.test.id.list, rownames(age.genotype)),]
+rownames(ibd.test.snp) <- ibd.test.id.list
+ibd.test.input <-  ibd.test.snp %>% data.frame(check.names = T)
+
+# 300OB (Disease)
+tob.test.id.list <- sampleCohort$V1[sampleCohort$V2=="300ob"]
+tob.test.phen <- full_phen[match(tob.test.id.list, rownames(full_phen)),]
+rownames(tob.test.phen) <- tob.test.id.list
+tob.test.snp <- age.genotype[match(tob.test.id.list, rownames(age.genotype)),]
+rownames(tob.test.snp) <- tob.test.id.list
+tob.test.input <-  tob.test.snp %>% data.frame(check.names = T)
+
+# FSK health
+fsk.test.id.list <- sampleCohort$V1[sampleCohort$V2=="lld2_fsk" | sampleCohort$V2=="500fg_fsk"]
+fsk.test.phen <- full_phen[match(fsk.test.id.list, rownames(full_phen)),]
+rownames(fsk.test.phen) <- fsk.test.id.list
+fsk.test.snp <- age.genotype[match(fsk.test.id.list, rownames(age.genotype)),]
+rownames(fsk.test.snp) <- fsk.test.id.list
+fsk.test.input <-  fsk.test.snp %>% data.frame(check.names = T)
+
+# LLD health
+apk.test.id.list <- sampleCohort$V1[sampleCohort$V2=="lld1"]
+apk.test.phen <- full_phen[match(apk.test.id.list, rownames(full_phen)),]
+rownames(apk.test.phen) <- apk.test.id.list
+apk.test.snp <- age.genotype[match(apk.test.id.list, rownames(age.genotype)),]
+rownames(apk.test.snp) <- apk.test.id.list
+apk.test.input <-  apk.test.snp %>% data.frame(check.names = T)
+
+# Health
+health.test.id.list <- sampleCohort$V1[sampleCohort$V2=="lld1" | sampleCohort$V2=="lld2_fsk" | sampleCohort$V2=="500fg_fsk"]
+health.test.phen <- full_phen[match(health.test.id.list, rownames(full_phen)),]
+rownames(health.test.phen) <- health.test.id.list
+health.test.snp <- age.genotype[match(health.test.id.list, rownames(age.genotype)),]
+rownames(health.test.snp) <- health.test.id.list
+health.test.input <-  health.test.snp %>% data.frame(check.names = T)
+```
+
+### 2.3 Clean abundance data
+
+```{r 2.3}
+## dmp
+colnames(mbio.dmp.raw) <- colnames(mbio.dmp.raw) %>% str_replace_all("_metaphlan", "") # %>% paste("fece_",.,sep = "") %>% match(dmp_id$LLD_bam_id) %>% dmp_id$LLD_GoNL_all_id[.]
+mbio.dmp.raw <- mbio.dmp.raw[,!is.na(colnames(mbio.dmp.raw))]
+mbio.dmp.bac <- mbio.dmp.raw[grep('k__Bacteria',rownames(mbio.dmp.raw)),]
+mbio.dmp.s   <- mbio.dmp.bac[grep("s__", rownames(mbio.dmp.bac)), ] %>% .[grep("t__", rownames(.), invert = T),]
+rownames(mbio.dmp.s) <- rownames(mbio.dmp.s) %>% str_replace_all(".*s__", "")
+
+mbio.dmp.s.alpha <- data.frame(Shannon  = vegan::diversity(t(mbio.dmp.s), index="shannon"), 
+                                Richness = rowSums(t(mbio.dmp.s)!=0))
+
+mbio.dmp.s.summ <- data.frame(species = rownames(mbio.dmp.s),
+                               Prevalence = rowSums(mbio.dmp.s > 0)/ncol(mbio.dmp.s),
+                               Abundance = rowMeans(mbio.dmp.s))
+
+mbio.dmp.s.filt <- mbio.dmp.s[mbio.dmp.s.summ$Prevalence>0.05 & mbio.dmp.s.summ$Abundance > 0.1,] %>% t
+mbio.dmp.s.filt <- apply(mbio.dmp.s.filt, 1, myfun<-function(x){x/sum(x)}) %>% t() %>% as.data.frame()
+
+## lld1
+colnames(mbio.lld1.raw) <- colnames(mbio.lld1.raw) %>% str_replace_all("_metaphlan", "") %>% paste("fece_",.,sep = "") %>% match(lld1_id$LLD_bam_id) %>% lld1_id$LLD_GoNL_all_id[.]
+mbio.lld1.raw <- mbio.lld1.raw[,!is.na(colnames(mbio.lld1.raw))]
+mbio.lld1.bac <- mbio.lld1.raw[grep('k__Bacteria',rownames(mbio.lld1.raw)),]
+mbio.lld1.s   <- mbio.lld1.bac[grep("s__", rownames(mbio.lld1.bac)), ] %>% .[grep("t__", rownames(.), invert = T),]
+rownames(mbio.lld1.s) <- rownames(mbio.lld1.s) %>% str_replace_all(".*s__", "")
+
+mbio.lld1.s.alpha <- data.frame(Shannon  = vegan::diversity(t(mbio.lld1.s), index="shannon"), 
+                                Richness = rowSums(t(mbio.lld1.s)!=0))
+
+mbio.lld1.s.summ <- data.frame(species = rownames(mbio.lld1.s),
+                               Prevalence = rowSums(mbio.lld1.s > 0)/ncol(mbio.lld1.s),
+                               Abundance = rowMeans(mbio.lld1.s))
+
+mbio.lld1.s.filt <- mbio.lld1.s[mbio.lld1.s.summ$Prevalence>0.05 & mbio.lld1.s.summ$Abundance > 0.0001,] %>% t
+mbio.lld1.s.filt <- apply(mbio.lld1.s.filt, 1, myfun<-function(x){x/sum(x)}) %>% t() %>% as.data.frame()
+
+mbio.lld1.s.filt.clr <- microbiome::transform( t(mbio.lld1.s.filt), transform = "clr") %>% t()
+
+mbio.lld1.s.filt.clr.dist <- vegan::vegdist(mbio.lld1.s.filt.clr, method = "euclidean")
+mbio.lld1.s.filt.clr.pcoa <- ecodist::pco(mbio.lld1.s.filt.clr.dist)
+
+if(!dir.exists("13.agePrediction/mbio")){dir.create("13.agePrediction/mbio")}
+saveRDS(mbio.lld1.s.filt.clr.pcoa, "13.agePrediction/mbio/mbio.lld1.s.filt.clr.pcoa.rds")
+
+mbio.lld1.s.filt.clr.pcoa.df <-
+  data.frame(
+    Sample = rownames(mbio.lld1.s.filt.clr.pcoa$vectors),
+    PC1 = mbio.lld1.s.filt.clr.pcoa$vectors[, 1],
+    PC2 = mbio.lld1.s.filt.clr.pcoa$vectors[, 2],
+    PC3 = mbio.lld1.s.filt.clr.pcoa$vectors[, 3],
+    PC4 = mbio.lld1.s.filt.clr.pcoa$vectors[, 4],
+    PC5 = mbio.lld1.s.filt.clr.pcoa$vectors[, 5],
+    ShannonIndex = rownames(mbio.lld1.s.filt.clr.pcoa$vectors) %>% match(rownames(mbio.lld1.s.alpha)) %>% mbio.lld1.s.alpha$Shannon[.]
+  )
+```
+
+## 3 Predicting age based on gut microbial SNVs
+
+### 3.1 Feature selection and robustness of performance
+
+Train model using nested cross validation
+```{r 3.1.1, eval=FALSE}
+feature.list <- colnames(train.snp)
+ml.Age.snp <- my_gbt_reg.ncv.predef(train.input, rownames(train.input), "Age", feature.list,    # inputs
+                                   treeN = 2000,tree_depth = 15, min_n = 30,sample_size = 0.6, # pre-defined hyper-parameters
+                                   mtry =round(0.2*length(feature.list)),learn_rate = 0.01,    # pre-defined hyper-parameters
+                                   outside.v = 5, outside.repeat = 5, inside.v = 5)            # setting of nested cross-validation
+
+if(!dir.exists("13.agePrediction")){dir.create("13.agePrediction")}
+if(!dir.exists("13.agePrediction/model")){dir.create("13.agePrediction/model")}
+
+saveRDS(ml.Age.snp, "13.agePrediction/model/ml.Age.snp.rds")
+saveRDS.lgb.Booster(extract_fit_engine(ml.Age.snp$ready.model), "13.agePrediction/model/ml.Age.snp.model.rds")
+saveRDS(ml.Age.snp[["features"]],"13.agePrediction/model/ml.Age.snp.wf.feature.rds")
+write.table(ml.Age.snp[["features"]],"13.agePrediction/ml.Age.snp.wf.feature.tsv",sep = "\t", row.names = F, col.names = T, quote = F)
+```
+
+The performance of model based on prediction in nested cross validation
+```{r 3.1.2, eval=FALSE}
+# Load the  model
+ml.Age.snp.wf <- readRDS("13.agePrediction/model/ml.Age.snp.rds")
+
+ml.Age.snp.ncv.perf <- matrix(NA, nrow = length(ml.Age.snp.wf$cv), ncol = 3) %>% as.data.frame()
+colnames(ml.Age.snp.ncv.perf) <- c("ID", "RMSE", "R2")
+
+for (i in 1:length(ml.Age.snp.wf$cv)) {
+  ml.Age.snp.ncv.perf$ID[i]   <- names(ml.Age.snp.wf$cv)[i]
+  ml.Age.snp.ncv.perf$RMSE[i] <- ml.Age.snp.wf$cv[[i]]$final.performance[1]
+  ml.Age.snp.ncv.perf$R2[i]   <- ml.Age.snp.wf$cv[[i]]$final.performance[2]
+}
+
+write.table(ml.Age.snp.ncv.perf, "13.agePrediction/ml.Age.snp.ncv.perf.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+ml.Age.snp.ncv.perf <- read.table("13.agePrediction/model/ml.Age.snp.ncv.perf.tsv", sep = "\t", header = T)
+
+meanPerm <- mean(ml.Age.snp.ncv.perf$R2)
+meanPerm
+pdf("13.agePrediction/ml.Age.snp.ncv.perf.density.pdf", height = 3.5, width = 3.5)
+ggplot(ml.Age.snp.ncv.perf, aes(x=R2)) +
+  geom_density(color = "#1772b4", fill = adjustcolor("#1772b4", alpha.f = 0.1))+
+  geom_rug(sides="b", color = "#1772b4")+
+  scale_y_continuous(expand = c(0,0))+
+  geom_vline(xintercept = meanPerm, color = "#1772b4", linetype="dashed")+
+  theme_classic()
+dev.off()
+
+```
+
+### 3.2 Latest final model
+
+Prepare the inputs for the latest final model based on the features prioritized by nested cross validation
+```{r 3.2.1, eval=FALSE}
+ml.Age.snp.wf.feature <- readRDS("13.agePrediction/model/ml.Age.snp.wf.feature.rds")
+
+# Prepare the final model inputs
+exp.feature <- ml.Age.snp.wf.feature$Feature[ml.Age.snp.wf.feature$CheckCutoff==FALSE]
+exp.input <- train.input
+exp.input <- data.frame(Outcome = exp.input[rownames(train.input), "Age"],
+                        exp.input[rownames(train.input), exp.feature], check.names = T)
+exp.input$Outcome<-as.numeric(exp.input$Outcome)
+exp.input <- exp.input[!is.na(exp.input$Outcome),]
+```
+
+Train the latest final model
+```{r 3.2.2, eval=FALSE}
+# Train final model
+exp.boost_mod <- boost_tree(trees = 2000,
+                        tree_depth = 15, min_n = 30,
+                        # loss_reduction = tune(),                     ## first three: model complexity
+                        sample_size = 0.6, 
+                        mtry = round(0.2*length(exp.feature)),         ## randomness
+                        learn_rate = 0.01) %>% 
+      set_engine("lightgbm") %>% set_mode("regression")
+exp.final_input_train_rec <- 
+  recipe(Outcome ~ ., data = exp.input[,c("Outcome", exp.feature)]) %>%
+  step_zv(all_predictors())
+exp.final_boost_wf <- workflow() %>%
+  add_model(exp.boost_mod) %>% 
+  add_recipe(exp.final_input_train_rec)
+exp.final2_fitted_wf <- exp.final_boost_wf %>% fit(data=exp.input) # This is the latest final model
+
+saveRDS(exp.final2_fitted_wf, "13.agePrediction/model/ml.Age.snp.latest.rds") 
+saveRDS.lgb.Booster(extract_fit_engine(exp.final2_fitted_wf), "13.agePrediction/model/ml.Age.snp.model.latest.rds")
+
+# Training dataset performance
+Age.train.snp.pred <- predict(exp.final2_fitted_wf, exp.input)
+cor.test(Age.train.snp.pred$.pred, train.phen$Age)
+Age.train.snp.pred$Delta <- Age.train.snp.pred$.pred - train.phen$Age
+Age.train.snp.pred$ID <- rownames(train.phen)
+Age.train.snp.pred$Cohort <- rownames(train.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.train.snp.pred, "13.agePrediction/Age.train.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.train.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.train.snp.pred, aes(train.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+```
+
+### 3.3 Model explainability
+
+Calculate Shapley values
+```{r 3.3.1, eval=FALSE}
+# Load the original final model
+#ml.Age.snp.wf <- readRDS("13.agePrediction/model/ml.Age.snp.rds")
+#ml.Age.snp.wf <- ml.Age.snp.wf$ready.model
+#ml.Age.snp.model <- readRDS.lgb.Booster("13.agePrediction/model/ml.Age.snp.model.rds")
+#ml.Age.snp.wf$fit$fit$fit <- ml.Age.snp.model
+
+# Load the latest final model
+ml.Age.snp.wf <- readRDS("13.agePrediction/model/ml.Age.snp.latest.rds")
+ml.Age.snp.model <- readRDS.lgb.Booster("13.agePrediction/model/ml.Age.snp.model.latest.rds")
+ml.Age.snp.wf$fit$fit$fit <- ml.Age.snp.model
+
+# Feature importance and contribution
+exp.shp <- shapviz::shapviz(extract_fit_engine(ml.Age.snp.wf), 
+                            X_pred = as.matrix(exp.input[,ml.Age.snp.wf$pre$mold$predictors%>%colnames()]))
+pdf("13.agePrediction/sharpley_values.beeswarm.pdf", height = 4, width = 6.5)
+shapviz::sv_importance(exp.shp, kind = "beeswarm", show_numbers = TRUE, fill = "red") +
+  scale_colour_gradient(
+    low = adjustcolor("#2486b9", alpha.f = 0.5), high = adjustcolor("#ec2d7a", alpha.f = 0.5),na.value = adjustcolor("black", alpha.f = 0),
+    breaks = c(0, 1), labels = c("low", "high")
+  ) +
+  theme_minimal()
+dev.off()
+
+exp.shp.df     <- shapviz::sv_importance(exp.shp,max_display=Inf)
+exp.importance <- data.frame(Feature = exp.shp.df$data$feature, Importance = exp.shp.df$data$value)
+exp.importance$CHR <- exp.importance$Feature %>% str_replace_all("_.*", "") %>% str_replace_all("^X", "")
+exp.importance$SNP <- exp.importance$Feature %>% str_extract_all(".*_") %>% unlist() %>% str_replace_all("^X", "") %>% str_replace_all("_$", "")
+exp.importance$Ref <- exp.importance$Feature %>% str_replace_all(".*_", "")
+write.table(exp.importance, "13.agePrediction/latest.model.importance.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+
+
+ml.Age.snp.wf.feature<-readRDS("13.agePrediction/model/ml.Age.snp.wf.feature.rds")
+
+ml.Age.snp.wf.feature$Order <- 1:nrow(ml.Age.snp.wf.feature)
+
+pdf("13.agePrediction/ml.Age.snp.ncv.feature.importance.pdf", height = 3.5, width = 3.5)
+ml.Age.snp.wf.feature %>%
+  ggplot(aes(Order, Cumsum))+
+  geom_point(color = "#1772b4", alpha = 0.5)+
+  geom_hline(yintercept = max(ml.Age.snp.wf.feature$Cumsum), linetype="dashed")+
+  geom_hline(yintercept = 0.95*max(ml.Age.snp.wf.feature$Cumsum), color = "#ec2d7a")+
+  geom_vline(xintercept = max(ml.Age.snp.wf.feature$Order[!ml.Age.snp.wf.feature$CheckCutoff]), color = "#ec2d7a")+
+  xlab("Feature number")+
+  ylab("Accumulated importance")+
+  theme_classic()
+dev.off()
+
+# Count feature availability in lld1
+# sum((colSums(!is.na(apk.test.snp))>0) & (colnames(apk.test.snp) %in% ml.Age.snp.wf.feature$Feature[!ml.Age.snp.wf.feature$CheckCutoff]))
+```
+
+SNPs importance and significance
+```{r 3.3.2, eval=FALSE}
+snp.rep.inter <- intersect(exp.importance$SNP, mwasMeta.assoc$SNP)
+snp.coh.inter <-intersect(exp.importance$SNP, mwasCoh.assoc$SNP)
+
+snp.inter <- c(snp.rep.inter, snp.coh.inter)
+
+snp.rep.inter.df <- data.frame(SNP = snp.rep.inter,
+                               Importance = snp.rep.inter %>% match(exp.importance$SNP) %>% exp.importance$Importance[.],
+                               EffectSize = snp.rep.inter %>% match(mwasMeta.assoc$SNP) %>% mwasMeta.assoc$Effect[.],
+                               P = snp.rep.inter %>% match(mwasMeta.assoc$SNP) %>% mwasMeta.assoc$P.value[.],
+                               SpearmanR = snp.rep.inter %>% match(mwasMeta.assoc$SNP) %>% mwasMeta.assoc$R.Spearman.dmp[.],
+                               SpearmanP = snp.rep.inter %>% match(mwasMeta.assoc$SNP) %>% mwasMeta.assoc$P.Spearman.dmp[.])
+plot(snp.rep.inter.df$Importance, -log10(snp.rep.inter.df$P))
+cor.test(snp.rep.inter.df$Importance, -log10(snp.rep.inter.df$P), method = "spearman")
+
+mwasMeta.assoc.age <- mwasMeta.assoc %>% 
+  dplyr::filter(Phenotype=="Age") %>%
+  dplyr::filter(SNP %in% snp.rep.inter)
+mwasMeta.assoc.age$Importance <- mwasMeta.assoc.age$SNP %>%
+  match(exp.importance$SNP) %>%
+  exp.importance$Importance[.]
+write.table(mwasMeta.assoc.age, "13.agePrediction/mwasMeta.assoc.age.importance.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+
+
+snp.coh.inter.df <- data.frame(SNP = snp.coh.inter,
+                               Importance = snp.coh.inter %>% match(exp.importance$SNP) %>% exp.importance$Importance[.],
+                               EffectSize = snp.coh.inter %>% match(mwasCoh.assoc$SNP) %>% mwasCoh.assoc$BETA[.],
+                               P = snp.coh.inter %>% match(mwasCoh.assoc$SNP) %>% mwasCoh.assoc$P[.],
+                               SpearmanR = snp.coh.inter %>% match(mwasCoh.assoc$SNP) %>% mwasCoh.assoc$R.Spearman[.],
+                               SpearmanP = snp.coh.inter %>% match(mwasCoh.assoc$SNP) %>% mwasCoh.assoc$P.Spearman[.])
+plot(snp.coh.inter.df$Importance, -log10(snp.coh.inter.df$P))
+cor.test(snp.coh.inter.df$Importance, -log10(snp.coh.inter.df$P), method = "spearman")
+```
+
+### 3.4 Test dataset performance
+
+```{r 3.4}
+ml.Age.snp.wf <- readRDS("13.agePrediction/model/ml.Age.snp.latest.rds")
+ml.Age.snp.model <- readRDS.lgb.Booster("13.agePrediction/model/ml.Age.snp.model.latest.rds")
+ml.Age.snp.wf$fit$fit$fit <- ml.Age.snp.model
+
+# non-DMP test dataset
+Age.nondmp.test.snp.pred <- predict(ml.Age.snp.wf, nondmp.test.input)
+cor.test(Age.nondmp.test.snp.pred$.pred, nondmp.test.phen$Age)
+Age.nondmp.test.snp.pred$Delta <- Age.nondmp.test.snp.pred$.pred - nondmp.test.phen$Age
+Age.nondmp.test.snp.pred$ID <- rownames(nondmp.test.phen)
+Age.nondmp.test.snp.pred$Cohort <- rownames(nondmp.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.nondmp.test.snp.pred, "13.agePrediction/Age.nondmp.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.test.nonDMP.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.nondmp.test.snp.pred, aes(nondmp.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# LLD2-FSK test dataset
+Age.lld2_fsk.test.snp.pred <- predict(ml.Age.snp.wf, lld2_fsk.test.input)
+cor.test(Age.lld2_fsk.test.snp.pred$.pred, lld2_fsk.test.phen$Age)
+Age.lld2_fsk.test.snp.pred$Delta <- Age.lld2_fsk.test.snp.pred$.pred - lld2_fsk.test.phen$Age
+Age.lld2_fsk.test.snp.pred$ID <- rownames(lld2_fsk.test.phen)
+Age.lld2_fsk.test.snp.pred$Cohort <- rownames(lld2_fsk.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.lld2_fsk.test.snp.pred, "13.agePrediction/Age.lld2_fsk.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.test.LLD2_FSK.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.lld2_fsk.test.snp.pred, aes(lld2_fsk.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# LLD2-FSK test dataset
+Age.lld2_fsk.test.snp.pred <- predict(ml.Age.snp.wf, lld2_fsk.test.input)
+cor.test(Age.lld2_fsk.test.snp.pred$.pred, lld2_fsk.test.phen$Age)
+Age.lld2_fsk.test.snp.pred$Delta <- Age.lld2_fsk.test.snp.pred$.pred - lld2_fsk.test.phen$Age
+Age.lld2_fsk.test.snp.pred$ID <- rownames(lld2_fsk.test.phen)
+Age.lld2_fsk.test.snp.pred$Cohort <- rownames(lld2_fsk.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.lld2_fsk.test.snp.pred, "13.agePrediction/Age.lld2_fsk.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.test.LLD2_FSK.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.lld2_fsk.test.snp.pred, aes(lld2_fsk.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# 500FG-FSK test dataset
+Age.ffg_fsk.test.snp.pred <- predict(ml.Age.snp.wf, ffg_fsk.test.input)
+cor.test(Age.ffg_fsk.test.snp.pred$.pred, ffg_fsk.test.phen$Age)
+Age.ffg_fsk.test.snp.pred$Delta <- Age.ffg_fsk.test.snp.pred$.pred - ffg_fsk.test.phen$Age
+Age.ffg_fsk.test.snp.pred$ID <- rownames(ffg_fsk.test.phen)
+Age.ffg_fsk.test.snp.pred$Cohort <- rownames(ffg_fsk.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.ffg_fsk.test.snp.pred, "13.agePrediction/Age.ffg_fsk.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.test.ffg_FSK.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.ffg_fsk.test.snp.pred, aes(ffg_fsk.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# FSK test dataset
+Age.fsk.test.snp.pred <- predict(ml.Age.snp.wf, fsk.test.input)
+cor.test(Age.fsk.test.snp.pred$.pred, fsk.test.phen$Age)
+Age.fsk.test.snp.pred$Delta <- Age.fsk.test.snp.pred$.pred - fsk.test.phen$Age
+Age.fsk.test.snp.pred$ID <- rownames(fsk.test.phen)
+Age.fsk.test.snp.pred$Cohort <- rownames(fsk.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.fsk.test.snp.pred, "13.agePrediction/Age.fsk.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.testFSK.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.fsk.test.snp.pred, aes(fsk.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# APK test dataset
+Age.apk.test.snp.pred <- predict(ml.Age.snp.wf, apk.test.input)
+cor.test(Age.apk.test.snp.pred$.pred, apk.test.phen$Age)
+Age.apk.test.snp.pred$Delta <- Age.apk.test.snp.pred$.pred - apk.test.phen$Age
+Age.apk.test.snp.pred$ID <- rownames(apk.test.phen)
+Age.apk.test.snp.pred$Cohort <- rownames(apk.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.apk.test.snp.pred, "13.agePrediction/Age.apk.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.testAPK.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.apk.test.snp.pred, aes(apk.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# 300TZFG test dataset
+Age.tzfg.test.snp.pred <- predict(ml.Age.snp.wf, tzfg.test.input)
+cor.test(Age.tzfg.test.snp.pred$.pred, tzfg.test.phen$Age)
+Age.tzfg.test.snp.pred$Delta <- Age.tzfg.test.snp.pred$.pred - tzfg.test.phen$Age
+Age.tzfg.test.snp.pred$ID <- rownames(tzfg.test.phen)
+Age.tzfg.test.snp.pred$Cohort <- rownames(tzfg.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.tzfg.test.snp.pred, "13.agePrediction/Age.tzfg.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.test.300TZFG.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.tzfg.test.snp.pred, aes(tzfg.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# IBD test dataset
+Age.ibd.test.snp.pred <- predict(ml.Age.snp.wf, ibd.test.input)
+cor.test(Age.ibd.test.snp.pred$.pred, ibd.test.phen$Age)
+Age.ibd.test.snp.pred$Delta <- Age.ibd.test.snp.pred$.pred - ibd.test.phen$Age
+Age.ibd.test.snp.pred$ID <- rownames(ibd.test.phen)
+Age.ibd.test.snp.pred$Cohort <- rownames(ibd.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.ibd.test.snp.pred, "13.agePrediction/Age.ibd.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.test.IBD.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.ibd.test.snp.pred, aes(ibd.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# LLD2-FSK test dataset
+Age.tob.test.snp.pred <- predict(ml.Age.snp.wf, tob.test.input)
+cor.test(Age.tob.test.snp.pred$.pred, tob.test.phen$Age)
+Age.tob.test.snp.pred$Delta <- Age.tob.test.snp.pred$.pred - tob.test.phen$Age
+Age.tob.test.snp.pred$ID <- rownames(tob.test.phen)
+Age.tob.test.snp.pred$Cohort <- rownames(tob.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.tob.test.snp.pred, "13.agePrediction/Age.tob.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.test.300OB.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.tob.test.snp.pred, aes(tob.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# LLD2-apk test dataset
+Age.lld2_apk.test.snp.pred <- predict(ml.Age.snp.wf, lld2_apk.test.input)
+cor.test(Age.lld2_apk.test.snp.pred$.pred, lld2_apk.test.phen$Age)
+Age.lld2_apk.test.snp.pred$Delta <- Age.lld2_apk.test.snp.pred$.pred - lld2_apk.test.phen$Age
+Age.lld2_apk.test.snp.pred$ID <- rownames(lld2_apk.test.phen)
+Age.lld2_apk.test.snp.pred$Cohort <- rownames(lld2_apk.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.lld2_apk.test.snp.pred, "13.agePrediction/Age.lld2_apk.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.test.LLD2_apk.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.lld2_apk.test.snp.pred, aes(lld2_apk.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# Health test dataset
+Age.health.test.snp.pred <- predict(ml.Age.snp.wf, health.test.input)
+cor.test(Age.health.test.snp.pred$.pred, health.test.phen$Age)
+Age.health.test.snp.pred$Delta <- Age.health.test.snp.pred$.pred - health.test.phen$Age
+Age.health.test.snp.pred$ID <- rownames(health.test.phen)
+Age.health.test.snp.pred$Cohort <- rownames(health.test.phen) %>% match(sampleCohort$New_SV_ID) %>% sampleCohort$Cohort[.]
+saveRDS(Age.health.test.snp.pred, "13.agePrediction/Age.health.test.snp.pred.rds")
+
+pdf("13.agePrediction/SNP.test.Health.age.pdf", height = 3.5, width = 3.5)
+ggplot(Age.health.test.snp.pred, aes(health.test.phen$Age, .pred))+
+  geom_point(alpha = 0.9, fill = "#267db1", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#fb7756")+
+  xlab("Chronological age")+
+  ylab("Age predicted by gut microbial SNVs")+
+  theme_linedraw()
+dev.off()
+
+# Compare LLD1 and LLD2
+Age.lld1.test.snp.pred <- Age.apk.test.snp.pred
+Age.lld1.test.snp.pred$.pred_t2 <- Age.lld1.test.snp.pred$ID %>% paste("_F_APK", sep = "") %>% match(Age.lld2_apk.test.snp.pred$ID) %>% Age.lld2_apk.test.snp.pred$.pred[.]
+
+# hist(Age.lld1.test.snp.pred$.pred_t2-Age.lld1.test.snp.pred$.pred, breaks = 100)
+wilcox.test(Age.lld1.test.snp.pred$.pred_t2, Age.lld1.test.snp.pred$.pred, paired = TRUE, alternative = "greater")
+Age.lld1.test.snp.pred.long <- Age.lld1.test.snp.pred[c(3,1,4)] %>% pivot_longer(2:3,names_to = "TimePoint", values_to = "PredictedAge")
+
+pdf("13.agePrediction/predictedAgeT1T2compare.boxplot.pdf", height = 3.5, width = 3.5)
+Age.lld1.test.snp.pred.long %>% 
+  ggplot(aes(TimePoint, PredictedAge, group = TimePoint))+
+  geom_boxplot(aes(color = TimePoint))+
+  geom_line(aes(TimePoint, PredictedAge, group = ID), alpha = 0.2)+
+  xlab("Time point")+
+  ylab("Predicted age by gut microbial SNVs")+
+  theme_bw()+
+  theme(legend.position = "none")
+dev.off()
+```
+
+## 4 Biological age
+
+### 4.1 Independence of SNP-age
+
+```{r 4.1}
+bio.age.lld1$SNV.Age <- bio.age.lld1$ID %>% match(Age.apk.test.snp.pred$ID) %>% Age.apk.test.snp.pred$.pred[.]
+
+bio.age.lld1.r<-matrix(NA, nrow = 11, ncol = 11)
+rownames(bio.age.lld1.r) <- colnames(bio.age.lld1)[3:13]
+colnames(bio.age.lld1.r) <- colnames(bio.age.lld1)[3:13]
+bio.age.lld1.p<-matrix(NA, nrow = 11, ncol = 11)
+rownames(bio.age.lld1.p) <- colnames(bio.age.lld1)[3:13]
+colnames(bio.age.lld1.p) <- colnames(bio.age.lld1)[3:13]
+
+for (i in 3:ncol(bio.age.lld1)) {
+#  i<- 5
+  for (j in 3:ncol(bio.age.lld1)) {
+    # j <- 5
+    if(i==j){
+      bio.age.lld1.r[i-3+1,j-3+1] <- 1
+      bio.age.lld1.p[i-3+1,j-3+1] <- 0
+    }else{
+      df_i <- data.frame(X = bio.age.lld1[,i],
+                         Y = bio.age.lld1[,j],
+                         Z = bio.age.lld1$Age) %>%
+        na.omit()
+      pcor_i <- pcor(df_i, method = "spearman") 
+      bio.age.lld1.r[i-3+1,j-3+1] <- pcor_i$estimate[1,2]; bio.age.lld1.r[j-3+1,i-3+1] <- pcor_i$estimate[1,2]
+      bio.age.lld1.p[i-3+1,j-3+1] <- pcor_i$p.value[1,2];  bio.age.lld1.p[j-3+1,i-3+1] <- pcor_i$p.value[1,2]
+    }
+  }
+}
+
+pdf("13.agePrediction/bio.age.pcor.heatmap.pdf", height = 4.5, width = 6.5)
+corrplot::corrplot(bio.age.lld1.r, p.mat = bio.age.lld1.p,
+                   type = 'lower', insig='blank', tl.srt = 45, tl.col = 'black', cl.pos = 'r')
+dev.off()
+```
+
+### 4.2 Correlation with other phenotypes
+
+```{r 4.1, warning=FALSE}
+# Prepare phenotype dataset
+apk.test.phen.assoc <- apk.test.phen[,phenInfoSumm$UnifiedName[phenInfoSumm$SuperClass=="Intrinsic" & phenInfoSumm$ValueType == "Continuous"]]
+apk.test.phen.assoc[match(rownames(lld1_scfa_raw), rownames(apk.test.phen.assoc)), match(colnames(lld1_scfa_raw), colnames(apk.test.phen.assoc))]<-lld1_scfa_raw
+apk.test.phen.assoc <- apk.test.phen.assoc[, !str_detect(colnames(apk.test.phen.assoc), "LCMS$")]
+
+# Partial correlation
+snv.age.phen.assoc <- matrix(NA, nrow = ncol(apk.test.phen.assoc), ncol = 11) %>% as.data.frame()
+colnames(snv.age.phen.assoc) <- c("Phenotype","N", 
+                                  "R.partial", "P.partial", "FDR.partial", 
+                                  "R.snvAge", "P.snvAge", "FDR.snvAge",
+                                  "R.Age", "P.Age", "FDR.Age")
+
+for (i in 1:ncol(apk.test.phen.assoc)) {
+  #  i <- 2
+  
+  df_i <- data.frame(Phenotype = Age.apk.test.snp.pred$ID %>% match(rownames(apk.test.phen.assoc)) %>% apk.test.phen.assoc[.,i],
+                     SNV.Age = Age.apk.test.snp.pred$.pred,
+                     Age = Age.apk.test.snp.pred$ID %>% match(rownames(apk.test.phen.assoc)) %>% apk.test.phen.assoc$Age[.]
+  ) %>% na.omit()
+  
+  if(nrow(df_i) > 10){
+    pcor_i      <- pcor(df_i, method = "spearman")
+    snv.age.cor <- cor.test(df_i$Phenotype, df_i$SNV.Age, method = "spearman")
+    age.cor     <- cor.test(df_i$Phenotype, df_i$Age,     method = "spearman")
+    
+    snv.age.phen.assoc$Phenotype[i] <- colnames(apk.test.phen.assoc)[i]
+    snv.age.phen.assoc$N[i]         <- nrow(df_i)
+    
+    snv.age.phen.assoc$P.partial[i] <- pcor_i$p.value[1,2]
+    snv.age.phen.assoc$R.partial[i] <- pcor_i$estimate[1,2]
+    
+    snv.age.phen.assoc$P.snvAge[i]  <- snv.age.cor$p.value
+    snv.age.phen.assoc$R.snvAge[i]  <- snv.age.cor$estimate
+    
+    snv.age.phen.assoc$P.Age[i]     <- age.cor$p.value
+    snv.age.phen.assoc$R.Age[i]     <- age.cor$estimate
+  }
+}
+snv.age.phen.assoc <- snv.age.phen.assoc[-1,]
+snv.age.phen.assoc <- snv.age.phen.assoc[!is.na(snv.age.phen.assoc$Phenotype),]
+
+snv.age.phen.assoc$FDR.partial <- p.adjust(snv.age.phen.assoc$P.partial, method = "fdr")
+snv.age.phen.assoc$FDR.snvAge  <- p.adjust(snv.age.phen.assoc$P.snvAge, method = "fdr")
+snv.age.phen.assoc$FDR.Age     <- p.adjust(snv.age.phen.assoc$P.Age, method = "fdr")
+snv.age.phen.assoc$CorrComparison <- abs(snv.age.phen.assoc$R.snvAge) > abs(snv.age.phen.assoc$R.Age)
+snv.age.phen.assoc.sort <- snv.age.phen.assoc %>% dplyr::arrange(P.partial) %>% dplyr::filter(P.partial < 0.05 )
+
+write.table(snv.age.phen.assoc.sort, "13.agePrediction/snv.age.phen.assoc.sort.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+
+pdf("13.agePrediction/snv.age.phen.assoc.pdf",height = 3.5, width = 5)
+ggplot(snv.age.phen.assoc.sort, aes(Phenotype, R.partial))+
+  geom_bar(aes(color = CorrComparison, fill = CorrComparison), stat="identity", position="identity")+
+  ylab("Partial correlation (R)")+
+  coord_flip()+
+  scale_x_discrete(limits = rev(snv.age.phen.assoc.sort$Phenotype))+
+  scale_color_manual(name="High in",
+                     breaks=c(TRUE, FALSE),
+                     labels=c("SNV age", "Age"),
+                     values = c("#009cb7", "#806d9e"))+
+  scale_fill_manual(name="High in",
+                    breaks=c(TRUE, FALSE),
+                    labels=c("SNV age", "Age"),
+                    values = c("#009cb7", "#806d9e"))+
+  theme_classic()+
+  theme(axis.text.y = element_text(hjust = 0.5))
+dev.off() 
+
+pdf("13.agePrediction/snp.Age.propionate.pdf", height = 3.5, width = 3.5)
+ggplot(Age.apk.test.snp.pred, 
+       aes(Age.apk.test.snp.pred$.pred,
+           Age.apk.test.snp.pred$ID %>% match(rownames(apk.test.phen.assoc)) %>% apk.test.phen.assoc$Propionate[.]))+
+  geom_point(alpha = 0.9, fill = "#009cb7", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#264e70")+
+  xlab("Gut microbial SNV age")+
+  ylab("Propionate")+
+  theme_linedraw()
+dev.off()
+
+pdf("13.agePrediction/Age.Propionate.pdf", height = 3.5, width = 3.5)
+ggplot(Age.apk.test.snp.pred, 
+       aes(Age.apk.test.snp.pred$ID %>% match(rownames(apk.test.phen.assoc)) %>% apk.test.phen.assoc$Age[.],
+           Age.apk.test.snp.pred$ID %>% match(rownames(apk.test.phen.assoc)) %>% apk.test.phen.assoc$Propionate[.]))+
+  geom_point(alpha = 0.9, fill = "#806d9e", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#411c35")+
+  xlab("Chronological age")+
+  ylab("Propionate")+
+  theme_linedraw()
+dev.off()
+
+pdf("13.agePrediction/snp.Age.Butyrate.pdf", height = 3.5, width = 3.5)
+ggplot(Age.apk.test.snp.pred, 
+       aes(Age.apk.test.snp.pred$.pred,
+           Age.apk.test.snp.pred$ID %>% match(rownames(apk.test.phen.assoc)) %>% apk.test.phen.assoc$Butyrate[.]))+
+  geom_point(alpha = 0.9, fill = "#009cb7", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#264e70")+
+  xlab("Gut microbial SNV age")+
+  ylab("Butyrate")+
+  theme_linedraw()
+dev.off()
+
+pdf("13.agePrediction/Age.Butyrate.pdf", height = 3.5, width = 3.5)
+ggplot(Age.apk.test.snp.pred, 
+       aes(Age.apk.test.snp.pred$ID %>% match(rownames(apk.test.phen.assoc)) %>% apk.test.phen.assoc$Age[.],
+           Age.apk.test.snp.pred$ID %>% match(rownames(apk.test.phen.assoc)) %>% apk.test.phen.assoc$Butyrate[.]))+
+  geom_point(alpha = 0.9, fill = "#806d9e", colour = "black", pch=21, stroke=0.3,size = 2)+
+  geom_smooth(method = "lm", color = "#411c35")+
+  xlab("Chronological age")+
+  ylab("Butyrate")+
+  theme_linedraw()
+dev.off()
+```
+
+### 4.3 Correlation with blood metabolome
+
+```{r 4.1}
+# Prepare blood metabolome dataset
+apk.test.metab.assoc <-  Age.apk.test.snp.pred$ID %>% match(rownames(metab.lld1)) %>% metab.lld1[.,]
+rownames(apk.test.metab.assoc) <- Age.apk.test.snp.pred$ID
+apk.test.metab.assoc.clr <- transform_and_filter_mtb(apk.test.metab.assoc, method="clr")
+apk.test.metab.assoc <- apk.test.metab.assoc.clr
+
+# Partial correlation
+snv.age.metab.assoc <- matrix(NA, nrow = ncol(apk.test.metab.assoc), ncol = 11) %>% as.data.frame()
+colnames(snv.age.metab.assoc) <- c("Phenotype","N", 
+                                  "EeffectSize.correctAge", "P.correctAge", "FDR.correctAge", 
+                                  "EeffectSize.snvAge", "P.snvAge", "FDR.snvAge",
+                                  "EeffectSize.Age", "P.Age", "FDR.Age")
+
+for (i in 1:ncol(apk.test.metab.assoc)) {
+  #  i <- 1
+  
+  df_i <- data.frame(Phenotype = Age.apk.test.snp.pred$ID %>% match(rownames(apk.test.metab.assoc)) %>% apk.test.metab.assoc[.,i],
+                     SNV.Age = Age.apk.test.snp.pred$.pred,
+                     Age = Age.apk.test.snp.pred$ID %>% match(rownames(full_phen)) %>% full_phen$Age[.],
+                     Sex = Age.apk.test.snp.pred$ID %>% match(rownames(full_phen)) %>% full_phen$Sex[.],
+                     Creatinine = Age.apk.test.snp.pred$ID %>% match(rownames(full_phen)) %>% full_phen$BloodCreatinine[.]
+  ) %>% na.omit()
+  
+  if(nrow(df_i) > 10){
+    #df_i$Phenotype <- qtrans(df_i$Phenotype)
+    #df_i$SNV.Age <- qtrans(df_i$SNV.Age)
+    #df_i$Age <- qtrans(df_i$Age)
+    
+    snv.age.metab.assoc$Phenotype[i] <- colnames(apk.test.metab.assoc)[i]
+    snv.age.metab.assoc$N[i]         <- nrow(df_i)
+    
+    #lm_correctAge <- lm(Phenotype ~ SNV.Age + Age + Sex , data = df_i) %>% summary
+    #lm_snvAge     <- lm(Phenotype ~ SNV.Age + Sex, data = df_i) %>% summary
+    #lm_Age        <- lm(Phenotype ~ Age + Sex, data = df_i) %>% summary
+    # snv.age.metab.assoc$P.correctAge[i] <- lm_correctAge$coefficients[2,4]#pcor_i$p.value[1,2]
+    # snv.age.metab.assoc$EeffectSize.correctAge[i] <- lm_correctAge$coefficients[2,1]#pcor_i$estimate[1,2]
+    # 
+    # snv.age.metab.assoc$P.snvAge[i]  <- lm_snvAge$coefficients[2,4]#snv.age.cor$p.value
+    # snv.age.metab.assoc$EeffectSize.snvAge[i]  <- lm_snvAge$coefficients[2,1]#snv.age.cor$estimate
+    # 
+    # snv.age.metab.assoc$P.Age[i]     <- lm_Age$coefficients[2,4] #age.cor$p.value
+    # snv.age.metab.assoc$EeffectSize.Age[i]     <- lm_Age$coefficients[2,1] #age.cor$estimate
+    
+    pcor_i      <- pcor(df_i, method = "pearson")
+    snv.age.cor <- pcor(df_i[,-3], method = "pearson")
+    age.cor     <- pcor(df_i[,-2],     method = "pearson")
+
+    snv.age.metab.assoc$P.correctAge[i] <- pcor_i$p.value[1,2]
+    snv.age.metab.assoc$EeffectSize.correctAge[i] <- pcor_i$estimate[1,2]
+    
+    snv.age.metab.assoc$P.snvAge[i]  <- snv.age.cor$p.value[1,2]
+    snv.age.metab.assoc$EeffectSize.snvAge[i]  <- snv.age.cor$estimate[1,2]
+    
+    snv.age.metab.assoc$P.Age[i]     <- age.cor$p.value[1,2]
+    snv.age.metab.assoc$EeffectSize.Age[i]     <- age.cor$estimate[1,2]
+  }
+}
+
+snv.age.metab.assoc <- snv.age.metab.assoc[!is.na(snv.age.metab.assoc$Phenotype),]
+
+snv.age.metab.assoc$FDR.correctAge <- p.adjust(snv.age.metab.assoc$P.correctAge, method = "fdr")
+snv.age.metab.assoc$FDR.snvAge  <- p.adjust(snv.age.metab.assoc$P.snvAge, method = "fdr")
+snv.age.metab.assoc$FDR.Age     <- p.adjust(snv.age.metab.assoc$P.Age, method = "fdr")
+snv.age.metab.assoc$CorrComparison <- abs(snv.age.metab.assoc$EeffectSize.correctAge) > abs(snv.age.metab.assoc$EeffectSize.Age)
+snv.age.metab.assoc.sort <- snv.age.metab.assoc %>% dplyr::arrange(P.correctAge) %>% dplyr::filter(FDR.correctAge < 0.05 )
+snv.age.metab.assoc.df <- data.frame(snv.age.metab.assoc,
+                                     snv.age.metab.assoc$Phenotype %>% match(metab.lld1.anno$meta) %>% metab.lld1.anno[.,])
+write.table(snv.age.metab.assoc.df, "13.agePrediction/snv.age.metab.assoc.df.tsv",sep = "\t", row.names = F, col.names = T, quote = F)
+write.table(snv.age.metab.assoc.df[,"HMDB"],"13.agePrediction/metab.background.txt",sep = "\t", row.names = F, col.names = F, quote = F)
+
+snv.age.metab.assoc.df.sort <- snv.age.metab.assoc.df %>%
+  dplyr::arrange(super_class, class, sub_class)
+metab.order <- snv.age.metab.assoc.df.sort$Phenotype
+
+#pdf("13.agePrediction/snv.age.metab.assoc.manhattan.pdf", height = 3.5, width = 5.5)
+p_metab_manhattan <-ggplot(snv.age.metab.assoc.df.sort, aes(Phenotype, -log10(P.correctAge), color = super_class))+
+  geom_point(alpha = 0.7)+
+  geom_hline(yintercept = -log10(max(snv.age.metab.assoc.df.sort$P.correctAge[snv.age.metab.assoc.df.sort$FDR.correctAge<0.05])), 
+             color = "red",linetype = "dashed")+
+  xlab("Metabolites")+
+  ylab("-log10(P)")+
+  scale_color_manual(values = wes_palette("Darjeeling1", length(unique(snv.age.metab.assoc.df.sort$super_class)), type = "continuous"))+
+  scale_x_discrete(limits = metab.order)+
+  scale_y_continuous(expand = c(0,0)) +
+  theme(legend.position = 'none',
+        #axis.line.x = element_line(colour = 'white'),
+        #axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+#dev.off()
+```
+
+### 4.4 Enrichment analysis
+
+```{r 4.1}
+snv.age.metab.assoc.df.sig <- snv.age.metab.assoc.df %>% dplyr::filter(FDR.correctAge < 0.05)
+snv.age.metab.assoc.df.sig.pos <- snv.age.metab.assoc.df %>% dplyr::filter(FDR.correctAge < 0.05 & EeffectSize.correctAge > 0)
+snv.age.metab.assoc.df.sig.neg <- snv.age.metab.assoc.df %>% dplyr::filter(FDR.correctAge < 0.05 & EeffectSize.correctAge < 0)
+
+snv.age.metab.assoc.df.sig.pos.fast <- snv.age.metab.assoc.df %>% 
+  dplyr::filter(FDR.correctAge < 0.05 & EeffectSize.correctAge > 0 & FDR.snvAge < 0.05 &
+                  ((EeffectSize.snvAge > 0 & EeffectSize.Age > 0 & CorrComparison == TRUE) | 
+                    EeffectSize.snvAge > 0 &  FDR.Age > 0.05) )
+snv.age.metab.assoc.df.sig.neg.fast <- snv.age.metab.assoc.df %>% 
+  dplyr::filter(FDR.correctAge < 0.05 & EeffectSize.correctAge < 0 & FDR.snvAge < 0.05 &
+                  ((EeffectSize.snvAge < 0 & EeffectSize.Age < 0 & CorrComparison == TRUE) | 
+                    EeffectSize.snvAge < 0 &  FDR.Age > 0.05) )
+
+snv.age.metab.assoc.df.sig.fast <- rbind(snv.age.metab.assoc.df.sig.pos.fast, snv.age.metab.assoc.df.sig.neg.fast)
+
+ggplot(snv.age.metab.assoc.df.sig.fast, aes(EeffectSize.snvAge, EeffectSize.Age))+
+  geom_point()+
+  geom_vline(xintercept = 0)+
+  geom_hline(yintercept = 0)+
+  geom_abline(intercept = 0, slope = 1, color = "red")+
+  theme_minimal()
+
+snv.age.metab.assoc.df.sig.fast$Diff <- snv.age.metab.assoc.df.sig.fast$EeffectSize.snvAge - snv.age.metab.assoc.df.sig.fast$EeffectSize.Age
+
+snvAge.df <- snv.age.metab.assoc.df.sig.fast[,c(1,6,8)]; colnames(snvAge.df) <- c("Metabolite", "EffectSize", "FDR")
+Age.df    <- snv.age.metab.assoc.df.sig.fast[,c(1,9,11)]; colnames(Age.df)    <- c("Metabolite", "EffectSize", "FDR")
+
+snvAge.df$Age <- "SNV age"
+Age.df$Age <- "Chronological age"
+
+age.metab.assoc.df <- rbind(snvAge.df, Age.df)
+age.metab.assoc.df$Sig.Sign <- ifelse(age.metab.assoc.df$FDR < 0.05, "*", "")
+
+metab_order <- snv.age.metab.assoc.df.sig.fast$Phenotype[order(snv.age.metab.assoc.df.sig.fast$EeffectSize.snvAge, decreasing = T)]
+metab_name <- metab_order %>% match(metab.lld1.anno$meta) %>% metab.lld1.anno$name[.]
+metab_name[39] <- metab_order %>% match(metab.lld1.anno$meta) %>% metab.lld1.anno$HMDB[.] %>% .[39]
+metab_name[nchar(stringi::stri_enc_toutf8(metab_name))>30] <-  metab_order %>% match(metab.lld1.anno$meta) %>% metab.lld1.anno$HMDB[.] %>% .[nchar(stringi::stri_enc_toutf8(metab_name))>30]
+
+p_es<-ggplot(age.metab.assoc.df, aes(Metabolite, EffectSize, group = Age, color = Age, fill = Age))+
+  geom_bar(stat = "identity",position=position_dodge())+
+  geom_text(aes(label=Sig.Sign), color="black",
+            position = position_dodge(0.9), size=3.5)+
+  scale_x_discrete(limits = metab_order, labels = metab_name)+
+  xlab(NULL)+
+  scale_color_manual(name="Age type",
+                     breaks=c("SNV age", "Chronological age"),
+                     labels=c("SNV age", "Chronological age"),
+                     values = c("#009cb7", "#806d9e"))+
+  scale_fill_manual(name="Age type",
+                    breaks=c("SNV age", "Chronological age"),
+                    labels=c("SNV age", "Chronological age"),
+                    values = c("#009cb7", "#806d9e"))+
+  theme_classic()+
+  theme(axis.ticks.length = unit(0, "cm"), 
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 5),
+        #axis.text.y = element_text(colour = "white"), 
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5))
+
+
+p_metab<-ggarrange(p_metab_manhattan, p_es,
+                                 # labels = c("A", "B","C", "D", "E"),
+                                 ncol = 2, align = 'hv')
+
+pdf("13.agePrediction/metabAssoc.pdf", width = 10,height = 3.5)
+print(p_metab)
+dev.off()
+
+write.table(snv.age.metab.assoc.df.sig.fast, "13.agePrediction/snv.age.metab.assoc.df.sig.fast.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+```
+
+
+
+
+
+
+## 5 Predicting age based on gut microbial abundance
+
+### 5.1 Feature selection and robustness of performance
+
+Train model using nested cross validation
+```{r 5.1.1, eval=FALSE}
+# Split train and test datasets
+train.id.list <- sampleCohort$V1[sampleCohort$V2=="dmp"]
+train.mbio <- train.id.list %>% match(rownames(mbio.dmp.s.filt)) %>% mbio.dmp.s.filt[.,]
+rownames(train.mbio) <- train.id.list
+
+train.phen <- full_phen[match(train.id.list, rownames(full_phen)),]
+rownames(train.phen) <- train.id.list
+
+train.mbio.input <- cbind(train.phen, train.mbio)
+mbio.feature.list <- colnames(train.mbio)
+
+ml.Age.mbio <- my_gbt_reg.ncv.predef(train.mbio.input, rownames(train.mbio.input), "Age", mbio.feature.list,    # inputs
+                                   treeN = 2000,tree_depth = 15, min_n = 30,sample_size = 0.6, # pre-defined hyper-parameters
+                                   mtry =round(0.2*length(mbio.feature.list)),learn_rate = 0.01,    # pre-defined hyper-parameters
+                                   outside.v = 5, outside.repeat = 5, inside.v = 5)            # setting of nested cross-validation
+
+if(!dir.exists("13.agePrediction")){dir.create("13.agePrediction")}
+if(!dir.exists("13.agePrediction/model")){dir.create("13.agePrediction/model")}
+
+saveRDS(ml.Age.snp, "13.agePrediction/model/ml.Age.snp.rds")
+saveRDS.lgb.Booster(extract_fit_engine(ml.Age.snp$ready.model), "13.agePrediction/model/ml.Age.snp.model.rds")
+saveRDS(ml.Age.snp[["features"]],"13.agePrediction/model/ml.Age.snp.wf.feature.rds")
+write.table(ml.Age.snp[["features"]],"13.agePrediction/ml.Age.snp.wf.feature.tsv",sep = "\t", row.names = F, col.names = T, quote = F)
+```
+
+The performance of model based on prediction in nested cross validation
+```{r 5.1.2, eval=FALSE}
+# Load the  model
+ml.Age.snp.wf <- readRDS("13.agePrediction/model/ml.Age.snp.rds")
+
+ml.Age.snp.ncv.perf <- matrix(NA, nrow = length(ml.Age.snp.wf$cv), ncol = 3) %>% as.data.frame()
+colnames(ml.Age.snp.ncv.perf) <- c("ID", "RMSE", "R2")
+
+for (i in 1:length(ml.Age.snp.wf$cv)) {
+  ml.Age.snp.ncv.perf$ID[i]   <- names(ml.Age.snp.wf$cv)[i]
+  ml.Age.snp.ncv.perf$RMSE[i] <- ml.Age.snp.wf$cv[[i]]$final.performance[1]
+  ml.Age.snp.ncv.perf$R2[i]   <- ml.Age.snp.wf$cv[[i]]$final.performance[2]
+}
+
+write.table(ml.Age.snp.ncv.perf, "13.agePrediction/ml.Age.snp.ncv.perf.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+ml.Age.snp.ncv.perf <- read.table("13.agePrediction/model/ml.Age.snp.ncv.perf.tsv", sep = "\t", header = T)
+
+meanPerm <- mean(ml.Age.snp.ncv.perf$R2)
+meanPerm
+pdf("13.agePrediction/ml.Age.snp.ncv.perf.density.pdf", height = 3.5, width = 3.5)
+ggplot(ml.Age.snp.ncv.perf, aes(x=R2)) +
+  geom_density(color = "#1772b4", fill = adjustcolor("#1772b4", alpha.f = 0.1))+
+  geom_rug(sides="b", color = "#1772b4")+
+  scale_y_continuous(expand = c(0,0))+
+  geom_vline(xintercept = meanPerm, color = "#1772b4", linetype="dashed")+
+  theme_classic()
+dev.off()
+
+```

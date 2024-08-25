@@ -1,0 +1,251 @@
+---
+title: "Genotype summary"
+author: "Daoming Wang"
+date: "2023/08/09"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+gtComp    <- read.table("00.rawData/dnaIsolation/GenotypeComparison.tsv", sep = "\t", header = T)
+distComp  <- read.table("00.rawData/dnaIsolation/GroupDistanceComparison.tsv", sep = "\t", header = T)
+
+speInfoSumm <- read.table("03.genotypeSummary/speInfoSumm.tsv", sep = "\t", header = T, check.names = F)
+```
+
+## 2 DNA isolation comparison analysis
+
+### 2.1 Prepare inputs for DNA isolation comparison analysis
+
+```{r 2.1}
+dnaInputList <- speInfoSumm$`Species ID`[
+  ((!is.na(speInfoSumm$CommonSnpRate.lld2_apk))  &  (!is.na(speInfoSumm$CommonSnpRate.lld2_fsk))) |
+  ((!is.na(speInfoSumm$CommonSnpRate.500fg_apk)) & (!is.na(speInfoSumm$CommonSnpRate.500fg_fsk)))
+  ]
+
+if(!dir.exists("04.technicalImpact")){dir.create("04.technicalImpact")}
+write.table(dnaInputList, "04.technicalImpact/dnaInput.list",sep = "\t",col.names = F, row.names = F, quote = F)
+
+sum(((!is.na(speInfoSumm$CommonSnpRate.lld2_apk)) | (!is.na(speInfoSumm$CommonSnpRate.500fg_apk))))
+sum(((!is.na(speInfoSumm$CommonSnpRate.lld2_fsk)) | (!is.na(speInfoSumm$CommonSnpRate.500fg_fsk))))
+```
+
+### 2.2 SNPs detected by both APK and FSK
+
+```{r 2.2}
+colnames(gtComp)[1] <- "Species"
+gtComp$Species <- gtComp$Species %>% str_replace_all(".*/", "") %>% str_replace_all("\\..*", "") %>% as.numeric()
+gtComp$ApkSpecificSnpProp <- gtComp$ApkSpecificSnpNum/gtComp$UnionSnpNum
+gtComp$FskSpecificSnpProp <- gtComp$FskSpecificSnpNum/gtComp$UnionSnpNum
+
+gtComp.summ <- gtComp %>% 
+  dplyr::group_by(Species) %>% 
+  dplyr::summarise(MeanIntersectSnpProp   = mean(IntersectSnpProp),
+                   MeanApkSpecificSnpProp = mean(ApkSpecificSnpProp),
+                   MeanFskSpecificSnpProp = mean(FskSpecificSnpProp),
+                   MeanDiffSnpNumProp     = mean(DiffSnpNumProp), 
+                   MeanGenotypeCorR       = mean(GenotypeCorR))
+
+gtComp.prop.long <- gtComp.summ[,1:4] %>% pivot_longer(2:4, names_to = "SnpProp", values_to = "Proportion")
+spe_order<-gtComp.summ$Species[order(gtComp.summ$MeanIntersectSnpProp, decreasing = T)]
+snp_prop_color<-c(pal_material("purple")(6)[c(5)],                  # MeanIntersectSnpProp
+                "#ee4866",         # MeanApkSpecificSnpProp
+                "#2486b9")         # MeanFskSpecificSnpProp
+
+p_snp_dna_prop<-ggplot(gtComp.prop.long, aes(x=as.character(Species), y=Proportion, group = SnpProp, fill = SnpProp))+
+  geom_bar(width = 1,position = "stack",stat="identity")+
+  scale_x_discrete(limits = spe_order)+
+  scale_y_continuous(expand = c(0,0)) +
+  ylab("Proportion")+
+  scale_fill_manual(name = 'SNP',
+                    breaks = c("MeanIntersectSnpProp", "MeanApkSpecificSnpProp", "MeanFskSpecificSnpProp"),
+                    values = snp_prop_color)+
+  theme_bw()+
+  theme(legend.position = "none",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+pdf("04.technicalImpact/SNP_DNA_intersect_prop_barplot.pdf", width = 10,height = 3)
+print(p_snp_dna_prop)
+dev.off()
+
+mean(gtComp.summ$MeanIntersectSnpProp)
+
+p_density_snp_inter <- gtComp.summ  %>%
+  ggplot(aes(x=MeanIntersectSnpProp))+
+  geom_density(color = pal_material("purple")(6)[c(5)], fill = pal_material("purple")(6)[c(5)], alpha = 0.2)+
+  geom_rug(color = pal_material("purple")(6)[c(5)], alpha = 0.5,length = unit(0.05, "npc"))+
+  geom_vline(xintercept = mean(gtComp.summ$MeanIntersectSnpProp), color = "#ed2f6a", linetype="dashed")+
+  ylab('Density')+
+  xlab('Proportion of SNP sites captured by both kits')+
+  scale_y_continuous(expand = c(0,0))+
+  theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line.x =  element_line(),
+        axis.line.y = element_line(),
+        legend.position = "none",
+        legend.key = element_rect(fill = NA), 
+        panel.grid.major = element_line(colour = NA),
+        panel.grid.minor = element_line(colour = NA), 
+        panel.background = element_rect(fill = NA))
+
+pdf("04.technicalImpact/intersect_SNP_density.pdf", height = 3, width = 3)
+print(p_density_snp_inter)
+dev.off() 
+```
+
+### 2.3 SNPs with discordant genotypes between APK and FSK
+
+```{r 2.3}
+gtComp.summ.full <- dplyr::left_join(gtComp.summ, distComp, by = "Species")
+write.table(gtComp.summ.full, "04.technicalImpact/DNA_isolation_SNP_comparison.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+
+p_genotype_diff_prop<-ggplot(gtComp.summ.full, aes(x=as.character(Species), y=MeanDiffSnpNumProp))+
+  geom_bar(width = 1,position = "stack",stat="identity", color = pal_material("blue")(6)[c(5)], fill = pal_material("blue")(6)[c(5)])+
+  scale_x_discrete(limits = spe_order)+
+  scale_y_continuous(expand = c(0,0)) +
+  ylab("Proportion")+
+  theme_bw()+
+  theme(legend.position = "bottom",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+pdf("04.technicalImpact/genotype_diff_prop_barplot.pdf", width = 10,height = 3)
+print(p_genotype_diff_prop)
+dev.off()
+
+mean(gtComp.summ$MeanDiffSnpNumProp)
+
+p_density_genotype_diff_prop <- gtComp.summ  %>%
+  ggplot(aes(x=MeanDiffSnpNumProp))+
+  geom_density(color = pal_material("blue")(6)[c(5)], fill = pal_material("blue")(6)[c(5)], alpha = 0.2)+
+  geom_rug(color = pal_material("blue")(6)[c(5)], alpha = 0.5,length = unit(0.05, "npc"))+
+  geom_vline(xintercept = mean(gtComp.summ$MeanDiffSnpNumProp), color = "#ed2f6a", linetype="dashed")+
+  ylab('Density')+
+  xlab('Proportion of discordant genotypes')+
+  scale_y_continuous(expand = c(0,0))+
+  theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line.x =  element_line(),
+        axis.line.y = element_line(),
+        legend.position = "none",
+        legend.key = element_rect(fill = NA), 
+        panel.grid.major = element_line(colour = NA),
+        panel.grid.minor = element_line(colour = NA), 
+        panel.background = element_rect(fill = NA))
+
+pdf("04.technicalImpact/genotype_diff_prop_density.pdf", height = 3, width = 3)
+print(p_density_genotype_diff_prop)
+dev.off() 
+```
+
+### 2.4 Accuracy
+
+```{r 2.4}
+p_accuracy_barplot<-ggplot(gtComp.summ.full, aes(x=as.character(Species), y=Accuracy))+
+  geom_bar(width = 1,position = "stack",stat="identity", color = pal_material("red")(6)[c(5)], fill = pal_material("red")(6)[c(5)])+
+  scale_x_discrete(limits = spe_order)+
+  scale_y_continuous(expand = c(0,0)) +
+  ylab("Accuracy")+
+  theme_bw()+
+  theme(legend.position = "bottom",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+pdf("04.technicalImpact/accuracy_barplot.pdf", width = 10,height = 3)
+print(p_accuracy_barplot)
+dev.off()
+
+mean(gtComp.summ.full$Accuracy)
+
+p_accuracy_density <- gtComp.summ.full  %>%
+  ggplot(aes(x=Accuracy))+
+  geom_density(color = pal_material("red")(6)[c(5)], fill = pal_material("red")(6)[c(5)], alpha = 0.2)+
+  geom_rug(color = pal_material("red")(6)[c(5)], alpha = 0.5,length = unit(0.05, "npc"))+
+  geom_vline(xintercept = mean(gtComp.summ.full$Accuracy), color = "#ed2f6a", linetype="dashed")+
+  ylab('Density')+
+  xlab('Proportion of discordant genotypes')+
+  scale_y_continuous(expand = c(0,0))+
+  theme(plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line.x =  element_line(),
+        axis.line.y = element_line(),
+        legend.position = "none",
+        legend.key = element_rect(fill = NA), 
+        panel.grid.major = element_line(colour = NA),
+        panel.grid.minor = element_line(colour = NA), 
+        panel.background = element_rect(fill = NA))
+
+pdf("04.technicalImpact/accuracy_density.pdf", height = 3, width = 3)
+print(p_accuracy_density)
+dev.off() 
+
+p_dna_snp_summ<-plot_grid(p_density_snp_inter,p_snp_dna_prop,
+                          p_density_genotype_diff_prop,p_genotype_diff_prop,
+                          p_accuracy_density,p_accuracy_barplot,
+                          # labels = c("A", "B","C", "D", "E"),
+                          ncol = 2,align = 'hv', 
+                          rel_widths = c(0.3, 1), rel_heights = c(1,1,1))
+
+pdf("04.technicalImpact/dna_isolation_comparison.pdf", width = 13,height = 9)
+print(p_dna_snp_summ)
+dev.off()
+```

@@ -1,0 +1,92 @@
+---
+title: "Prepare MWAS inputs"
+author: "Daoming Wang"
+date: "2023/08/09"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+phenInfoSumm <- read.table("02.phenotype_summary/phenInfoSumm.tsv", sep = "\t", header = T, check.names = F)
+phenCohort <- read.table("01.cleanData/phenInfo/phenCohort.tsv")
+speciesCohort <- read.table("01.cleanData/speInfo/speciesCohort.tsv")
+```
+
+## 2 Prepare EMMAX
+
+```{r 2,eval=FALSE}
+covarList<-c("Age", "Sex","CleanReadCount")
+
+cohortSpePhen <- left_join(phenCohort, speciesCohort, by = "V2")
+colnames(cohortSpePhen) <- c("UnifiedName", "Cohort", "SpeciesId")
+mwasParaEmmax<-as.data.frame(matrix(NA, nrow = nrow(cohortSpePhen), ncol = 7))
+colnames(mwasParaEmmax) <- c("Cohort", "Phenotype", "Species", "Covar", "Qcovar", "Runtime", "Status")
+
+for (i in 1:nrow(cohortSpePhen)) {
+#  i <- 489
+  mwasParaEmmax$Cohort[i]    <- cohortSpePhen$Cohort[i]
+  mwasParaEmmax$Phenotype[i] <- cohortSpePhen$UnifiedName[i]
+  mwasParaEmmax$Species[i]   <- cohortSpePhen$SpeciesId[i]
+  
+  if(mwasParaEmmax$Phenotype[i] %in% covarList){
+    covarList_tmp  <- covarList[-match(mwasParaEmmax$Phenotype[i], covarList)] 
+    covarList_type <- covarList_tmp %>% match(phenInfoSumm$UnifiedName) %>% phenInfoSumm$ValueType[.]
+    covar          <- covarList_tmp[covarList_type=="Binary" | covarList_type=="Category"] %>% paste(collapse = ",")
+    qcovar         <- covarList_tmp[covarList_type=="Continuous" | covarList_type=="Order"]%>% paste(collapse = ",")
+    
+    if(covar  == ""){covar  <- "None"}
+    if(qcovar == ""){qcovar <- "None"}
+
+    mwasParaEmmax$Covar[i]  <- covar
+    mwasParaEmmax$Qcovar[i] <- qcovar
+  }else{
+    covarList_tmp  <- covarList
+    covarList_type <- covarList_tmp %>% match(phenInfoSumm$UnifiedName) %>% phenInfoSumm$ValueType[.]
+    covar          <- covarList_tmp[covarList_type=="Binary" | covarList_type=="Category"] %>% paste(collapse = ",")
+    qcovar         <- covarList_tmp[covarList_type=="Continuous" | covarList_type=="Order"]%>% paste(collapse = ",")
+    
+    if(covar==""){covar   <- "None"}
+    if(qcovar==""){qcovar <- "None"}
+
+    mwasParaEmmax$Covar[i]  <- covar
+    mwasParaEmmax$Qcovar[i] <- qcovar
+  }
+  
+  if(mwasParaEmmax$Cohort[i] == "dmp"){
+    mwasParaEmmax$Runtime[i] <- "20:00:00"
+  }else{
+    mwasParaEmmax$Runtime[i] <- "5:00:00"
+  }
+  mwasParaEmmax$Status <- "To be submitted"
+}
+
+if(!dir.exists("06.MWAS_preparation")){dir.create("06.MWAS_preparation")}
+write.table(mwasParaEmmax, "06.MWAS_preparation/mwasPara.tsv",
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+

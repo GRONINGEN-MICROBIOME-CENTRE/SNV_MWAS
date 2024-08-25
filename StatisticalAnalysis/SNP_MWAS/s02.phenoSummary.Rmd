@@ -1,0 +1,431 @@
+---
+title: "Phenotype summary"
+author: "Daoming Wang"
+date: "2023/08/27"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+phenInfo<-read.table("01.cleanData/phenInfo/phenInfo.tsv", sep = "\t",header = T, check.names = F)
+phenConver<-read.table("01.cleanData/phenInfo/phenConver.tsv",sep = "\t",header = T,check.names = F)
+sampleCohorts<-read.table("00.rawData/cohortList/sampleCohorts.id.tsv",header = T)
+load("01.cleanData/phenotype/full_phen.RData")
+```
+
+### 1.3 General setting
+
+```{r 1.3}
+cohort_order       <- c("dmp", "lld1", "lld2_apk","lld2_fsk", "500fg_apk", "500fg_fsk", "300ob", "ibd", "300tzfg")
+cohort_label       <- c("DMP", "LLD1", "LLD2-APK","LLD2-FSK", "500FG-APK", "500FG-FSK", "300OB", "IBD", "300TZFG")
+cohort_title_label <- c("DMP", "LLD1", "LLD2_APK","LLD2_FSK", "500FG_APK", "500FG_FSK", "300OB", "IBD", "300TZFG")
+
+cohort_color<-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                pal_material("red")(6)[c(5)],                  # IBD
+                pal_material("amber")(6)[c(5)],                # 300OOB
+                pal_material("indigo")(6)[c(3,5)],             # 500FG-FSK 500FG-APK
+                pal_material("cyan")(6)[c(5)],                 # LLD2-FSK
+                pal_material("light-blue")(6)[c(3,5)],         # LLD2-APK LLD1
+                pal_material("light-green")(6)[c(5)]) %>% rev  # DMP
+
+
+## v2
+cohort_order.v2       <- c("dmp", "lld1", "500fg_fsk", "300ob", "ibd", "300tzfg")
+cohort_label.v2       <- c("DMP", "LLD1", "500FG-FSK", "300OB", "IBD", "300TZFG")
+cohort_title_label.v2 <- c("DMP", "LLD1", "500FG", "300OB", "IBD", "300TZFG")
+
+cohort_color.v2 <-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                pal_material("red")(6)[c(5)],                  # IBD
+                pal_material("amber")(6)[c(5)],                # 300OOB
+                pal_material("indigo")(6)[c(3)],             # 500FG-FSK
+                pal_material("light-blue")(6)[c(5)],         # LLD1
+                pal_material("light-green")(6)[c(5)]) %>% rev  # DMP
+```
+
+## 2 Summary
+### 2.1 Available sample size
+
+```{r 2.1}
+nogwas<-c("CleanReadCount","DNA.Concentration","PoopCollectionSeason", "MetaSeqBatch", "Latitude", "Longitude","UrbanicityChild1to4Y","Rome3IBS.Factor","TLCA", "TLCAp", "GCLA", "GLCAp")
+
+sampleCohorts$CohortId<-factor(sampleCohorts$CohortId, levels = cohort_order)
+
+Total_N<-colSums(!is.na(full_phen))
+phenInfo<-data.frame(phenInfo,Total_N)
+
+phenSumm<-matrix(NA, nrow = ncol(full_phen), ncol = 10) %>% as.data.frame
+for (i in 1:ncol(full_phen)) {
+#  i<-285
+  phenSumm[i,1]<-colnames(full_phen)[i]
+  if(sum(!is.na(full_phen[,i]))>0){
+    phenSumm[i,2:10]<-table(sampleCohorts$CohortId,!is.na(full_phen[,i]))[,2] %>% as.vector
+  }else{
+    phenSumm[i,2:10]<-0
+  }
+}
+colnames(phenSumm)<-c("UnifiedName", paste("N_",cohort_title_label, sep = ""))
+phenSumm$N_All<-rowSums(phenSumm[,2:10])
+
+phenSumm$Percentage_DMP<-phenSumm$N_DMP/sum(sampleCohorts$CohortId=="dmp")
+phenSumm$Percentage_LLD1<-phenSumm$N_LLD1/sum(sampleCohorts$CohortId=="lld1")
+phenSumm$Percentage_LLD2_APK<-phenSumm$N_LLD2_APK/sum(sampleCohorts$CohortId=="lld2_apk")
+phenSumm$Percentage_LLD2_FSK<-phenSumm$N_LLD2_FSK/sum(sampleCohorts$CohortId=="lld2_fsk")
+phenSumm$Percentage_500FG_APK<-phenSumm$N_500FG_APK/sum(sampleCohorts$CohortId=="500fg_apk")
+phenSumm$Percentage_500FG_FSK<-phenSumm$N_500FG_FSK/sum(sampleCohorts$CohortId=="500fg_fsk")
+phenSumm$Percentage_300OB<-phenSumm$N_300OB/sum(sampleCohorts$CohortId=="300ob")
+phenSumm$Percentage_IBD<-phenSumm$N_IBD/sum(sampleCohorts$CohortId=="ibd")
+phenSumm$Percentage_300TZFG<-phenSumm$N_300TZFG/sum(sampleCohorts$CohortId=="300tzfg")
+phenSumm$Percentage_All<-phenSumm$N_All/nrow(sampleCohorts)
+```
+
+### 2.2 Summary
+
+```{r 2.2}
+phenSummExtra<-matrix(NA, nrow = ncol(full_phen), ncol = 32) %>% as.data.frame
+for (i in c(1:nrow(phenInfo))) {
+  if(phenInfo$ValueType[i]=="Binary"){
+    phenSummExtra[i,]<-c(phenInfo$UnifiedName[i], 
+                    sum(!is.na(full_phen[,i])),
+                    sum(full_phen[,i]==1,na.rm = T),
+                    100*sum(full_phen[,i]==1,na.rm = T)/sum(!is.na(full_phen[,i])),
+                         
+                    sum( (!is.na(full_phen[,i])) & sampleCohorts$CohortId=="dmp",na.rm = T),
+                    sum(full_phen[,i]==1 & sampleCohorts$CohortId=="dmp",na.rm = T),
+                    100*sum(full_phen[,i]==1 & sampleCohorts$CohortId=="dmp",na.rm = T)/sum(sampleCohorts$CohortId=="dmp",na.rm = T),
+                         
+                    sum( (!is.na(full_phen[,i])) & sampleCohorts$CohortId=="lld1",na.rm = T),
+                    sum(full_phen[,i]==1 & sampleCohorts$CohortId=="lld1",na.rm = T),
+                    100*sum(full_phen[,i]==1 & sampleCohorts$CohortId=="lld1",na.rm = T)/sum(sampleCohorts$CohortId=="lld1",na.rm = T),
+                    
+                    sum( (!is.na(full_phen[,i])) & sampleCohorts$CohortId=="lld2_apk",na.rm = T),
+                    sum(full_phen[,i]==1 & sampleCohorts$CohortId=="lld2_apk",na.rm = T),
+                    100*sum(full_phen[,i]==1 & sampleCohorts$CohortId=="lld2_apk",na.rm = T)/sum(sampleCohorts$CohortId=="lld2_apk",na.rm = T),
+                    
+                    sum( (!is.na(full_phen[,i])) & sampleCohorts$CohortId=="lld2_fsk",na.rm = T),
+                    sum(full_phen[,i]==1 & sampleCohorts$CohortId=="lld2_fsk",na.rm = T),
+                    100*sum(full_phen[,i]==1 & sampleCohorts$CohortId=="lld2_fsk",na.rm = T)/sum(sampleCohorts$CohortId=="lld2_fsk",na.rm = T),
+                    
+                    sum( (!is.na(full_phen[,i])) & sampleCohorts$CohortId=="500fg_apk",na.rm = T),
+                    sum(full_phen[,i]==1 & sampleCohorts$CohortId=="500fg_apk",na.rm = T),
+                    100*sum(full_phen[,i]==1 & sampleCohorts$CohortId=="500fg_apk",na.rm = T)/sum(sampleCohorts$CohortId=="500fg_apk",na.rm = T),
+                    
+                    sum( (!is.na(full_phen[,i])) & sampleCohorts$CohortId=="500fg_fsk",na.rm = T),
+                    sum(full_phen[,i]==1 & sampleCohorts$CohortId=="500fg_fsk",na.rm = T),
+                    100*sum(full_phen[,i]==1 & sampleCohorts$CohortId=="500fg_fsk",na.rm = T)/sum(sampleCohorts$CohortId=="500fg_fsk",na.rm = T),
+                    
+                    sum( (!is.na(full_phen[,i])) & sampleCohorts$CohortId=="300ob",na.rm = T),
+                    sum(full_phen[,i]==1 & sampleCohorts$CohortId=="300ob",na.rm = T),
+                    100*sum(full_phen[,i]==1 & sampleCohorts$CohortId=="300ob",na.rm = T)/sum(sampleCohorts$CohortId=="300ob",na.rm = T),
+                    
+
+                    sum( (!is.na(full_phen[,i])) & sampleCohorts$CohortId=="ibd",na.rm = T),
+                    sum(full_phen[,i]==1 & sampleCohorts$CohortId=="ibd",na.rm = T),
+                    100*sum(full_phen[,i]==1 & sampleCohorts$CohortId=="ibd",na.rm = T)/sum(sampleCohorts$CohortId=="ibd",na.rm = T),
+                    
+                    sum( (!is.na(full_phen[,i])) & sampleCohorts$CohortId=="300tzfg",na.rm = T),
+                    sum(full_phen[,i]==1 & sampleCohorts$CohortId=="300tzfg",na.rm = T),
+                    100*sum(full_phen[,i]==1 & sampleCohorts$CohortId=="300tzfg",na.rm = T)/sum(sampleCohorts$CohortId=="300tzfg",na.rm = T),
+                    
+                    try(fisher.test(table(sampleCohorts$CohortId,all_phen[,i]))$p.value, silent = T) %>% as.numeric
+    )
+  }else if(phenInfo$ValueType[i]=="Continuous"| phenInfo$ValueType[i]=="Order"){
+    phenSummExtra[i,]<-c(phenInfo$UnifiedName[i],
+                         sum(!is.na(full_phen[,i])),
+                         mean(full_phen[,i],na.rm = T),
+                         se(full_phen[,i]),
+                         
+                         sum((!is.na(full_phen[,i])) &sampleCohorts$CohortId=="dmp",na.rm = T),
+                         mean(full_phen[sampleCohorts$CohortId=="dmp",i],na.rm = T),
+                         se(full_phen[sampleCohorts$CohortId=="dmp",i]),
+                         
+                         sum((!is.na(full_phen[,i])) &sampleCohorts$CohortId=="lld1",na.rm = T),
+                         mean(full_phen[sampleCohorts$CohortId=="lld1",i],na.rm = T),
+                         se(full_phen[sampleCohorts$CohortId=="lld1",i]),
+                         
+                         sum((!is.na(full_phen[,i])) &sampleCohorts$CohortId=="lld2_apk",na.rm = T),
+                         mean(full_phen[sampleCohorts$CohortId=="lld2_apk",i],na.rm = T),
+                         se(full_phen[sampleCohorts$CohortId=="lld2_apk",i]),
+                         
+                         sum((!is.na(full_phen[,i])) &sampleCohorts$CohortId=="lld2_fsk",na.rm = T),
+                         mean(full_phen[sampleCohorts$CohortId=="lld2_fsk",i],na.rm = T),
+                         se(full_phen[sampleCohorts$CohortId=="lld2_fsk",i]),
+                         
+                         sum((!is.na(full_phen[,i])) &sampleCohorts$CohortId=="500fg_apk",na.rm = T),
+                         mean(full_phen[sampleCohorts$CohortId=="500fg_apk",i],na.rm = T),
+                         se(full_phen[sampleCohorts$CohortId=="500fg_apk",i]),
+                         
+                         sum((!is.na(full_phen[,i])) &sampleCohorts$CohortId=="500fg_fsk",na.rm = T),
+                         mean(full_phen[sampleCohorts$CohortId=="500fg_fsk",i],na.rm = T),
+                         se(full_phen[sampleCohorts$CohortId=="500fg_fsk",i]),
+                         
+                         sum((!is.na(full_phen[,i])) &sampleCohorts$CohortId=="300ob",na.rm = T),
+                         mean(full_phen[sampleCohorts$CohortId=="300ob",i],na.rm = T),
+                         se(full_phen[sampleCohorts$CohortId=="300ob",i]),
+                         
+                         sum((!is.na(full_phen[,i])) &sampleCohorts$CohortId=="ibd",na.rm = T),
+                         mean(full_phen[sampleCohorts$CohortId=="ibd",i],na.rm = T),
+                         se(full_phen[sampleCohorts$CohortId=="ibd",i]),
+                         
+                         sum((!is.na(full_phen[,i])) &sampleCohorts$CohortId=="300tzfg",na.rm = T),
+                         mean(full_phen[sampleCohorts$CohortId=="300tzfg",i],na.rm = T),
+                         se(full_phen[sampleCohorts$CohortId=="300tzfg",i]),
+                         
+                         try(kruskal.test(full_phen[,i]~sampleCohorts$CohortId)$p.value,silent = T) %>% as.numeric
+    )
+  }
+}
+
+
+
+colnames(phenSummExtra)<-c("UnifiedName",
+                           "Num","Mean.or.N_1","SE.or.Percent_1",
+                           "Num.DMP","Mean.or.N_1.DMP","SE.or.Percent_1.DMP",
+                           "Num.LLD1","Mean.or.N_1.LLD1","SE.or.Percent_1.LLD1",
+                           "Num.LLD2_APK","Mean.or.N_1.LLD2_APK","SE.or.Percent_1.LLD2_APK",
+                           "Num.LLD2_FSK","Mean.or.N_1.LLD2_FSK","SE.or.Percent_1.LLD2_FSK",
+                           "Num.500FG_APK","Mean.or.N_1.500FG_APK","SE.or.Percent_1.500FG_APK",
+                           "Num.500FG_FSK","Mean.or.N_1.500FG_FSK","SE.or.Percent_1.500FG_FSK",
+                           "Num.300OB","Mean.or.N_1.300OB","SE.or.Percent_1.300OB",
+                           "Num.IBD","Mean.or.N_1.IBD","SE.or.Percent_1.IBD",
+                           "Num.300TZFG","Mean.or.N_1.300TZFG","SE.or.Percent_1.300TZFG",
+                           "P")
+
+for (i in 2:ncol(phenSummExtra)) {
+  phenSummExtra[,i]<-as.numeric(phenSummExtra[,i])
+}
+
+phenSummExtra[phenSummExtra=='NaN']<-NA
+
+phenInfoSumm<-cbind(phenInfo, phenSumm[,-1], phenSummExtra[,-1])
+
+# Check GWAS availability
+nonMissingPerc <- 0.1
+casePerc <- 10
+
+phenInfoSumm$Availability.DMP       <- (phenInfoSumm$ValueType == "Binary" & (phenInfoSumm$Percentage_DMP > nonMissingPerc & phenInfoSumm$SE.or.Percent_1.DMP > 1)) |
+  (phenInfoSumm$ValueType == "Continuous" & phenInfoSumm$Percentage_DMP > nonMissingPerc) | (phenInfoSumm$ValueType == "Order" & phenInfoSumm$Percentage_DMP > nonMissingPerc)
+phenInfoSumm$Availability.LLD1      <- (phenInfoSumm$ValueType == "Binary" & (phenInfoSumm$Percentage_LLD1 > nonMissingPerc & phenInfoSumm$SE.or.Percent_1.LLD1 > casePerc)) |
+  (phenInfoSumm$ValueType == "Continuous" & phenInfoSumm$Percentage_LLD1 > nonMissingPerc)| (phenInfoSumm$ValueType == "Order" & phenInfoSumm$Percentage_LLD1 > nonMissingPerc)
+phenInfoSumm$Availability.LLD2_APK  <- (phenInfoSumm$ValueType == "Binary" & (phenInfoSumm$Percentage_LLD2_APK > nonMissingPerc & phenInfoSumm$SE.or.Percent_1.LLD2_APK > casePerc)) |
+  (phenInfoSumm$ValueType == "Continuous" & phenInfoSumm$Percentage_LLD2_APK > nonMissingPerc)| (phenInfoSumm$ValueType == "Order" & phenInfoSumm$Percentage_LLD2_APK > nonMissingPerc)
+phenInfoSumm$Availability.LLD2_FSK  <- (phenInfoSumm$ValueType == "Binary" & (phenInfoSumm$Percentage_LLD2_FSK > nonMissingPerc & phenInfoSumm$SE.or.Percent_1.LLD2_FSK > casePerc)) |
+  (phenInfoSumm$ValueType == "Continuous" & phenInfoSumm$Percentage_LLD2_FSK > nonMissingPerc)| (phenInfoSumm$ValueType == "Order" & phenInfoSumm$Percentage_LLD2_FSK > nonMissingPerc)
+phenInfoSumm$Availability.500FG_APK <- (phenInfoSumm$ValueType == "Binary" & (phenInfoSumm$Percentage_500FG_APK > nonMissingPerc & phenInfoSumm$SE.or.Percent_1.500FG_APK > casePerc)) |
+  (phenInfoSumm$ValueType == "Continuous" & phenInfoSumm$Percentage_500FG_APK > nonMissingPerc)| (phenInfoSumm$ValueType == "Order" & phenInfoSumm$Percentage_500FG_APK > nonMissingPerc)
+phenInfoSumm$Availability.500FG_FSK <- (phenInfoSumm$ValueType == "Binary" & (phenInfoSumm$Percentage_500FG_FSK > nonMissingPerc & phenInfoSumm$SE.or.Percent_1.500FG_FSK > casePerc)) |
+  (phenInfoSumm$ValueType == "Continuous" & phenInfoSumm$Percentage_500FG_FSK > nonMissingPerc)| (phenInfoSumm$ValueType == "Order" & phenInfoSumm$Percentage_500FG_FSK > nonMissingPerc)
+phenInfoSumm$Availability.300OB     <- (phenInfoSumm$ValueType == "Binary" & (phenInfoSumm$Percentage_300OB > nonMissingPerc & phenInfoSumm$SE.or.Percent_1.300OB > casePerc)) |
+  (phenInfoSumm$ValueType == "Continuous" & phenInfoSumm$Percentage_300OB > nonMissingPerc)| (phenInfoSumm$ValueType == "Order" & phenInfoSumm$Percentage_300OB > nonMissingPerc)
+phenInfoSumm$Availability.IBD       <- (phenInfoSumm$ValueType == "Binary" & (phenInfoSumm$Percentage_IBD > nonMissingPerc & phenInfoSumm$SE.or.Percent_1.IBD > casePerc)) |
+  (phenInfoSumm$ValueType == "Continuous" & phenInfoSumm$Percentage_IBD > nonMissingPerc)| (phenInfoSumm$ValueType == "Order" & phenInfoSumm$Percentage_IBD > nonMissingPerc)
+phenInfoSumm$Availability.300TZFG   <- (phenInfoSumm$ValueType == "Binary" & (phenInfoSumm$Percentage_300TZFG > nonMissingPerc & phenInfoSumm$SE.or.Percent_1.300TZFG > casePerc)) |
+  (phenInfoSumm$ValueType == "Continuous" & phenInfoSumm$Percentage_300TZFG > nonMissingPerc)| (phenInfoSumm$ValueType == "Order" & phenInfoSumm$Percentage_300TZFG > nonMissingPerc)
+
+phenInfoSumm$UseInGwas <- (phenInfoSumm$Availability.DMP | 
+                             ((phenInfoSumm$Availability.LLD1 +  
+                                 phenInfoSumm$Availability.300OB + 
+                                 (phenInfoSumm$Availability.500FG_APK|phenInfoSumm$Availability.500FG_FSK) + 
+                                 phenInfoSumm$Availability.IBD +
+                                 phenInfoSumm$Availability.300TZFG) >= 2)) & (! phenInfoSumm$UnifiedName %in% nogwas)
+phenInfoSumm$UseInGwas[phenInfoSumm$SubClass == "FecalSCFA"] <- TRUE
+
+if(!dir.exists("02.phenotype_summary")){dir.create("02.phenotype_summary")}
+write.table(phenInfoSumm, "02.phenotype_summary/phenInfoSumm.tsv", sep = "\t", row.names = F, col.names = T, quote = F)
+```
+
+### 2.3 Visualization
+
+#### 2.3.1 Heatmap v1
+
+```{r 2.3}
+phenInfoSumm.sort<-phenInfoSumm[order(phenInfoSumm$SuperClass,phenInfoSumm$Class),] %>% dplyr::filter(UseInGwas == TRUE)
+
+# annotations
+phen_anno = rowAnnotation(
+  Superclass_bar = phenInfoSumm.sort$SuperClass,
+  Class_bar = phenInfoSumm.sort$Class,
+  Valuetype_bar = phenInfoSumm.sort$ValueType,
+  AvaiCohortN_bar = phenInfoSumm.sort$AvailableCohortNumber,
+  col = list(Superclass_bar = c("Exposure" = "#01A08A", 
+                          "Intrinsic" = "#FF2500", 
+                          "Technique" = "#F2AD00"),
+             Class_bar = c( "Anthropology" = "#257CB2",           "CurrentExposure" = "#E93E3F", "Diet" = "#4F9F3B",
+                            "EarlyLifeExposure" = "#FE8B15",      "Metabolite" = "#73489F",
+                            "GeographySocioeconomics" = "#A6CEE3","HealthDisease" = "#F68181",
+                            "MedicalMeasurement" = "#A5D981",          "MedicationUse" = "#F7F599", 
+                            "Stool" = "#10aec2"),
+             Valuetype_bar = c("Continuous" = "#257CB2",
+                               "Order" = "#A6CEE3",
+                               "Binary" = "#E93E3F",
+                               "Category" = "#FE8B15",
+                               "Location" = "grey50")
+             
+             ),
+  annotation_legend_param = list(Superclass_bar = list(title = "Super-class", at = c("Exposure" , "Intrinsic" , "Technique"), labels = c("Exposure" , "Intrinsic" , "Technique")),
+                                 Class_bar = list(title = "Class"),
+                                 Valuetype_bar = list(title = "Value type"),
+                                 AvaiCohortN_bar = list(title = "Available cohort number")),
+  annotation_label = c("Super-class", "Class", "Value type", "Available cohort number"),
+  simple_anno_size = unit(0.4, "cm"),
+  border = F)
+
+cohort.size <- table(sampleCohorts$Cohort)[match(cohort_title_label,(table(sampleCohorts$Cohort) %>% names))] %>% as.vector()
+cohort_anno<-columnAnnotation(phen_n_bar = anno_barplot(colSums(phenInfoSumm.sort[,9:17]>0),
+                                                         gp = gpar(fill = cohort_color, col = cohort_color)),
+                              cohort_n_bar = anno_barplot(cohort.size,
+                                                        gp = gpar(fill = cohort_color, col = cohort_color)),
+                              annotation_label = c("Available phenotype number", "Sample size"),
+                              border = F
+)
+
+phen_n_anno<-rowAnnotation(phen_n_cohrot_bar = anno_barplot(phenInfoSumm.sort[,9:17], 
+                                                            gp = gpar(fill = cohort_color, col = adjustcolor( "white", alpha.f = 0))),
+                           annotation_label = c("  "),
+                           width = unit(2.5, "cm"),border = F)
+
+p_ht_phenotype_summ<-as.matrix(phenInfoSumm.sort[,19:27]) %>%
+  Heatmap(.,
+        col = colorRamp2(quantile(.[.>0], probs = c(0,0.01,0.25,0.5,0.75,1)),viridis),
+        cluster_rows = FALSE,cluster_columns = FALSE,
+        show_row_dend = FALSE,show_column_dend = FALSE,
+        show_row_names = FALSE,row_names_side = "right",
+        column_names_rot = 90,
+        column_labels = cohort_label,
+        border = TRUE,border_gp = gpar(col = "black",lwd = 1),
+        left_annotation = phen_anno,
+        right_annotation = phen_n_anno,
+        top_annotation = cohort_anno,
+        heatmap_legend_param = list(direction = "horizontal",title = "Available proportion",legend_width = unit(4, "cm")))
+
+pdf("02.phenotype_summary/phenotype_summary.heatmap.pdf",width = 8,height = 10, family="Helvetica")
+ht_list<-p_ht_phenotype_summ
+draw(ht_list,heatmap_legend_side = "left")
+dev.off()
+
+ht_opt(RESET = TRUE)
+```
+
+
+#### 2.3.2 Heatmap v2
+
+```{r 2.3.2}
+phenInfoSumm.sort<-phenInfoSumm[order(phenInfoSumm$SuperClass,phenInfoSumm$Class),] %>% dplyr::filter(UseInGwas == TRUE)
+
+# annotations
+phen_anno = rowAnnotation(
+  Superclass_bar = phenInfoSumm.sort$SuperClass,
+  Class_bar = phenInfoSumm.sort$Class,
+  Valuetype_bar = phenInfoSumm.sort$ValueType,
+  AvaiCohortN_bar = phenInfoSumm.sort$AvailableCohortNumber,
+  col = list(Superclass_bar = c("Exposure" = "#01A08A", 
+                          "Intrinsic" = "#FF2500", 
+                          "Technique" = "#F2AD00"),
+             Class_bar = c( "Anthropology" = "#257CB2",           "CurrentExposure" = "#E93E3F", "Diet" = "#4F9F3B",
+                            "EarlyLifeExposure" = "#FE8B15",      "Metabolite" = "#73489F",
+                            "GeographySocioeconomics" = "#A6CEE3","HealthDisease" = "#F68181",
+                            "MedicalMeasurement" = "#A5D981",          "MedicationUse" = "#F7F599", 
+                            "Stool" = "#10aec2"),
+             Valuetype_bar = c("Continuous" = "#257CB2",
+                               "Order" = "#A6CEE3",
+                               "Binary" = "#E93E3F",
+                               "Category" = "#FE8B15",
+                               "Location" = "grey50")
+             
+             ),
+  annotation_legend_param = list(Superclass_bar = list(title = "Super-class", at = c("Exposure" , "Intrinsic" , "Technique"), labels = c("Exposure" , "Intrinsic" , "Technique")),
+                                 Class_bar = list(title = "Class"),
+                                 Valuetype_bar = list(title = "Value type"),
+                                 AvaiCohortN_bar = list(title = "Available cohort number")),
+  annotation_label = c("Super-class", "Class", "Value type", "Available cohort number"),
+  simple_anno_size = unit(0.4, "cm"),
+  border = F)
+
+cohort.size <- table(sampleCohorts$Cohort)[match(c("DMP", "LLD1", "500FG_FSK", "300OB", "IBD", "300TZFG"),(table(sampleCohorts$Cohort) %>% names))] %>% as.vector()
+cohort_anno<-columnAnnotation(phen_n_bar = anno_barplot(colSums(phenInfoSumm.sort[,c(9,10,14:17)]>0),
+                                                         gp = gpar(fill = cohort_color.v2, col = cohort_color.v2)),
+                              cohort_n_bar = anno_barplot(cohort.size,
+                                                        gp = gpar(fill = cohort_color.v2, col = cohort_color.v2)),
+                              annotation_label = c("Available phenotype number", "Sample size"),
+                              border = F
+)
+
+phen_n_anno<-rowAnnotation(phen_n_cohrot_bar = anno_barplot(phenInfoSumm.sort[,c(9,10,14:17)], 
+                                                            gp = gpar(fill = cohort_color.v2, col = adjustcolor( "white", alpha.f = 0))),
+                           annotation_label = c("  "),
+                           width = unit(2.5, "cm"),border = F)
+
+p_ht_phenotype_summ<-as.matrix(phenInfoSumm.sort[,c(c(19,20,24:27))]) %>%
+  Heatmap(.,
+        col = colorRamp2(quantile(.[.>0], probs = c(0,0.01,0.25,0.5,0.75,1)),viridis),
+        cluster_rows = FALSE,cluster_columns = FALSE,
+        show_row_dend = FALSE,show_column_dend = FALSE,
+        show_row_names = FALSE,row_names_side = "right",
+        column_names_rot = 90,
+        column_labels = cohort_label.v2,
+        border = TRUE,border_gp = gpar(col = "black",lwd = 1),
+        left_annotation = phen_anno,
+        right_annotation = phen_n_anno,
+        top_annotation = cohort_anno,
+        heatmap_legend_param = list(direction = "horizontal",title = "Available proportion",legend_width = unit(4, "cm")))
+
+pdf("02.phenotype_summary/phenotype_summary.heatmap.v2.pdf",width = 7,height = 10, family="Helvetica")
+ht_list<-p_ht_phenotype_summ
+draw(ht_list,heatmap_legend_side = "left")
+dev.off()
+
+ht_opt(RESET = TRUE)
+```
+
+## 3 Phenotype list
+
+```{r 3}
+phenAvai <- phenInfoSumm.sort[,c(4, 60:68)] %>% 
+  pivot_longer(!UnifiedName, names_to = "Cohort", values_to = "Availability") %>% 
+  dplyr::filter(Availability == TRUE) %>%
+  dplyr::select(UnifiedName, Cohort)
+
+phenAvai$Cohort <- phenAvai$Cohort %>% str_replace_all("Availability.", "") %>% match(cohort_title_label) %>% cohort_order[.]
+write.table(phenAvai, "01.cleanData/phenInfo/phenCohort.tsv", sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+## 4 Phenotype table for EMMAX
+
+```{r 4}
+full_phen.emmax <- full_phen
+
+for (i in 1:ncol(full_phen.emmax)) {
+#  i<-1
+  if(phenInfo$ValueType[match(colnames(full_phen.emmax)[i], phenInfo$UnifiedName)] == "Binary"){
+    full_phen.emmax[,i][full_phen.emmax[,i]==1] <- 2
+    full_phen.emmax[,i][full_phen.emmax[,i]==0] <- 1
+  }
+}
+
+write.table(full_phen.emmax,"01.cleanData/phenotype/full_phen.emmax.tsv",sep = "\t")
+save(full_phen.emmax, file = "01.cleanData/phenotype/full_phen.emmax.RData")
+```

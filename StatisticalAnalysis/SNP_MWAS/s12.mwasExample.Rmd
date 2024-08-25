@@ -1,0 +1,551 @@
+---
+title: "MWAS examples"
+author: "Daoming Wang"
+date: "2023/12/29"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+mwasMeta.cl.pt.full.filtered <- read.csv("09.metaAnalysisOverview/mwasMeta.cl.pt.full.filtered.tsv", sep = "\t", header = T)
+meta.ptDS <- readRDS("01.cleanData/genotype/meta.ptDS.rds")
+coh.ptDS  <- readRDS("01.cleanData/genotype/coh.ptDS.rds")
+pdb.seq.oppA  <- read.csv("00.rawData/example/Age.102274.sarA_2/homoSearch/rcsb_pdb_sequence.csv", header = T, check.names = F)
+
+sampleCohorts<-read.table("00.rawData/cohortList/sampleCohorts.tsv",header = F)
+load("01.cleanData/phenotype/full_phen.RData")
+catalogue <- read.csv("01.cleanData/catalogue/SNV-MWAS-catalogue.tsv", sep = "\t", header = T)
+```
+
+## 2 Cross-omics association
+
+## 3 Age.102274.sarA_2
+
+### 3.1 Replication
+
+```{r 3.1}
+if(!dir.exists("12.mwasExample")){dir.create("12.mwasExample")}
+if(!dir.exists("12.mwasExample/age.102274.sarA_2")){dir.create("12.mwasExample/age.102274.sarA_2")}
+
+mwasMeta.age.sarA_2 <- mwasMeta.cl.pt.full.filtered %>% dplyr::filter(Phenotype == "Age" & CHR == "102274" & Annotation == "sarA_2")
+
+mwasMeta.age.sarA_2.p    <- mwasMeta.age.sarA_2[,c(29,40,51,62,73,84)]
+mwasMeta.age.sarA_2.beta <- mwasMeta.age.sarA_2[,c(27,38,49,60,71,82)]
+mwasMeta.age.sarA_2.af2  <- mwasMeta.age.sarA_2[,c(24,35,46,57,68,79)]
+
+rownames(mwasMeta.age.sarA_2.beta) <- paste("SNP", mwasMeta.age.sarA_2$SNP,sep = "")
+
+## heatmap
+mwasMeta.age.sarA_2.af2 <- as.data.frame(mwasMeta.age.sarA_2.af2)
+mwasMeta.age.sarA_2.beta <- as.data.frame(mwasMeta.age.sarA_2.beta)
+colnames(mwasMeta.age.sarA_2.af2) <- c("DMP", "LLD1", "300OB", "500FG", "IBD", "300TZFG")
+colnames(mwasMeta.age.sarA_2.beta) <- c("DMP", "LLD1", "300OB", "500FG", "IBD", "300TZFG")
+
+mwasMeta.age.sarA_2.beta[mwasMeta.age.sarA_2.p>0.05]<-0
+mwasMeta.age.sarA_2.sign <- matrix(NA, nrow = nrow(mwasMeta.age.sarA_2.p), ncol = ncol(mwasMeta.age.sarA_2.p))
+mwasMeta.age.sarA_2.sign[is.na(mwasMeta.age.sarA_2.p)]<-"NA"
+mwasMeta.age.sarA_2.sign[mwasMeta.age.sarA_2.p > 0.05 ]<- " "
+mwasMeta.age.sarA_2.sign[mwasMeta.age.sarA_2.p < 0.05 ]<- "."
+mwasMeta.age.sarA_2.sign[mwasMeta.age.sarA_2.p < 0.001 ]<- "*"
+mwasMeta.age.sarA_2.sign[mwasMeta.age.sarA_2.p < 6.47E-6 ]<- "#"
+
+col_beta.high <- colorRamp2(c(0, quantile(as.matrix(mwasMeta.age.sarA_2.beta), na.rm = T)[4], max(mwasMeta.age.sarA_2.beta, na.rm = T)), c("white", "#2177b8", "#1772b4"))
+
+pdf("12.mwasExample/age.102274.sarA_2/age.102274.sarA_2.pdf", height = 3, width = 6) # Main Fig. 5d
+mwasMeta.age.sarA_2.beta %>%
+  Heatmap(.,
+          col = col_beta.high,
+          cluster_rows = FALSE,cluster_columns = FALSE,
+          show_row_dend = FALSE,show_column_dend = FALSE,
+          show_row_names = T,row_names_side = "left",
+          column_names_rot = 90,
+          row_labels = paste(mwasMeta.age.sarA_2$SNP, mwasMeta.age.sarA_2$A2,sep = "-"),
+          column_labels = c("DMP", "LLD1", "300OB", "500FG", "IBD", "300TZFG"),
+          border = TRUE,border_gp = gpar(col = "black",lwd = 1),
+          #left_annotation = phen_anno,
+          #right_annotation = phen_n_anno,
+          #top_annotation = cohort_anno,
+          heatmap_legend_param = list(direction = "horizontal",title = "Effect size",legend_width = unit(4, "cm")),
+          cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+            grid.text(as.matrix(mwasMeta.age.sarA_2.sign)[i,j], x, y)}
+  )
+dev.off()
+
+## barplot
+mwasMeta.age.sarA_2.af2 <- as.data.frame(mwasMeta.age.sarA_2.af2)
+rownames(mwasMeta.age.sarA_2.af2) <- paste("SNP", mwasMeta.age.sarA_2$SNP,sep = "")
+mwasMeta.age.sarA_2.af2.long <- reshape2::melt(as.matrix(mwasMeta.age.sarA_2.af2), varnames = c("ColumnName", "RowName"))
+
+cohort_order_2     <- c("dmp", "lld1", "500fg_fsk","300ob", "ibd", "300tzfg")
+cohort_order       <- c("DMP", "LLD1", "500FG","300OB", "IBD", "300TZFG")
+cohort_label       <- c("DMP", "LLD1", "500FG","300OB", "IBD", "300TZFG")
+cohort_title_label <- c("DMP", "LLD1", "500FG","300OB", "IBD", "300TZFG")
+
+cohort_color<-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                pal_material("red")(6)[c(5)],                  # IBD
+                pal_material("amber")(6)[c(5)],                # 300OOB
+                pal_material("indigo")(6)[c(3)],             # 500FG-FSK 500FG-APK
+                pal_material("light-blue")(6)[c(5)],         # LLD2-APK LLD1
+                pal_material("light-green")(6)[c(5)]) %>% rev  # DMP
+
+
+pdf("12.mwasExample/age.102274.sarA_2/mwasMeta.age.sarA_2.af2.pdf", width = 2, height = 3.5)
+ggplot(mwasMeta.age.sarA_2.af2.long, aes(x = RowName, y = value, fill = RowName)) +
+  geom_bar(stat = "identity") +
+  facet_grid(ColumnName~., scales='free') +
+  xlab(NULL)+
+  ylab("Allele frequency")+
+  scale_color_manual(name=NULL, 
+                     breaks = cohort_label,
+                     labels = cohort_label,
+                     values = cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = cohort_label,
+                    labels = cohort_label,
+                    values = cohort_color)+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "none")
+dev.off()
+
+
+all.age <- sampleCohorts 
+all.age$Age <- all.age$V1 %>% match(rownames(full_phen)) %>% full_phen$Age[.]
+
+pdf("12.mwasExample/age.102274.sarA_2/meanAgeCohort.pdf", width = 2, height = 1.5)
+all.age %>%
+  dplyr::group_by(V2) %>%
+  dplyr::summarise(mean = mean(Age, na.rm = T)) %>%
+  dplyr::filter(V2 == "dmp"|V2 == "lld1" | V2 == "300ob" | V2 == "500fg_fsk"| V2 == "ibd" | V2 == "300tzfg") %>%
+  ggplot(aes(x = V2, y = mean, fill = V2))+
+  geom_bar(stat = "identity") +
+  xlab(NULL)+
+  ylab("Mean Age")+
+  scale_x_discrete(limits = c("dmp", "lld1", "300ob", "500fg_fsk", "ibd", "300tzfg"))+
+  scale_color_manual(name=NULL, 
+                     breaks = cohort_order_2,
+                     labels = cohort_label,
+                     values = cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = cohort_order_2,
+                    labels = cohort_label,
+                    values = cohort_color)+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "none")
+dev.off()
+
+
+all.age.sarA_2.gt <- sampleCohorts
+colnames(all.age.sarA_2.gt) <- c("ID", "Cohort")
+all.age.sarA_2.gt$Age <- all.age.sarA_2.gt$ID %>% match(rownames(full_phen)) %>% full_phen$Age[.]
+all.age.sarA_2.gt <- all.age.sarA_2.gt$ID %>% match(rownames(meta.ptDS)) %>% meta.ptDS[.,mwasMeta.age.sarA_2$SNP] %>% cbind(all.age.sarA_2.gt,.)
+all.age.sarA_2.gt.long <- all.age.sarA_2.gt %>% pivot_longer(4:ncol(all.age.sarA_2.gt), names_to = "SNV", values_to = "Alt")
+
+all.age.sarA_2.gt.long$Cohort <- toupper(all.age.sarA_2.gt.long$Cohort)
+all.age.sarA_2.gt.long$Cohort[all.age.sarA_2.gt.long$Cohort=="500FG_FSK"] <- "500FG"
+
+all.age.sarA_2.gt.long$GT.group <- ifelse(all.age.sarA_2.gt.long$Alt==0, "No Alt", "With Alt")
+
+pdf("12.mwasExample/age.102274.sarA_2/Age.102274.sarA_2.GT.violin.pdf", width = 8, height = 8)
+all.age.sarA_2.gt.long %>%
+  dplyr::filter(!is.na(GT.group))  %>%
+  dplyr::filter(Cohort == "DMP" | Cohort == "LLD1" | Cohort == "300OB" | Cohort == "500FG" | Cohort == "IBD" |Cohort == "300TZFG")  %>%
+  ggplot(aes(x=Cohort,y=Age,fill = GT.group, color = GT.group))+
+  geom_violin(position = position_dodge(width = 0.4))+
+  geom_boxplot(width=0.1, fill="white",position = position_dodge(width = 0.4))+
+  scale_x_discrete(limits = cohort_order)+
+  scale_fill_manual(name=NULL, 
+                    breaks = c("No Alt", "With Alt"),
+                    labels = c("No Alt", "With Alt"),
+                    values = c("#158bb8", "#ee4866"))+
+  scale_color_manual(name=NULL, 
+                    breaks = c("No Alt", "With Alt"),
+                    labels = c("No Alt", "With Alt"),
+                    values = c("#158bb8", "#ee4866"))+
+  facet_grid(SNV~., scales='free')+
+  theme_minimal()
+dev.off()
+
+pdf("12.mwasExample/age.102274.sarA_2/Age.102274.sarA_2.GT.2SNV.violin.pdf", width = 7, height = 3)
+all.age.sarA_2.gt.long %>%
+  dplyr::filter(!is.na(GT.group))  %>%
+  dplyr::filter(Cohort == "DMP" | Cohort == "LLD1" | Cohort == "300OB" | Cohort == "500FG" | Cohort == "IBD" |Cohort == "300TZFG")  %>%
+  dplyr::filter(SNV == "102274_1617484" | SNV == "102274_1617604")  %>%
+  
+  ggplot(aes(x=Cohort,y=Age,fill = GT.group, color = GT.group))+
+  geom_violin(position = position_dodge(width = 0.7))+
+  geom_boxplot(width=0.2, fill="white",position = position_dodge(width = 0.7))+
+  scale_x_discrete(limits = cohort_order)+
+  scale_fill_manual(name=NULL, 
+                    breaks = c("No Alt", "With Alt"),
+                    labels = c("No Alt", "With Alt"),
+                    values = c("#158bb8", "#ee4866"))+
+  scale_color_manual(name=NULL, 
+                     breaks = c("No Alt", "With Alt"),
+                     labels = c("No Alt", "With Alt"),
+                     values = c("#158bb8", "#ee4866"))+
+  facet_grid(SNV~., scales='free')+
+  theme_minimal()
+dev.off()
+```
+
+### 3.2 alignment
+
+```{r 3.2}
+library(protr)
+
+pdb.seq.oppA[pdb.seq.oppA==""]<-NA
+pdb.seq.oppA.uniprot <- unique(pdb.seq.oppA$`Accession Code(s)`) %>% na.omit()
+
+pdb.seq.oppA.uniprot.seq<- NULL
+for (i in 1:length(pdb.seq.oppA.uniprot)) {
+#  i<-17
+  # add id
+  pdb.seq.oppA.uniprot.seq <- c(pdb.seq.oppA.uniprot.seq, paste(">", pdb.seq.oppA.uniprot[i], sep = ""))
+  
+  # get sequences, use the sequences provided in the table if query of id failed
+  seq_i <- NA
+  try(seq_i <- getUniProt(pdb.seq.oppA.uniprot[i]), silent = T)
+  if(is.na(seq_i)){seq_i <- seq_i %>% match(pdb.seq.oppA$`Accession Code(s)`) %>% pdb.seq.oppA$Sequence[.]}
+  
+  # add sequence
+  pdb.seq.oppA.uniprot.seq<-c(pdb.seq.oppA.uniprot.seq, unlist(seqa_i))
+}
+
+write.table(pdb.seq.oppA.uniprot.seq, "12.mwasExample/age.102274.sarA_2/pdb.seq.oppA.uniprot.seq.faa", row.names = F, col.names = F, quote = F)
+```
+
+### 3.3 Sequence logos
+
+```{r 3.3}
+# 215 S 25%, D 14%, N 12%, A 11%, V 10%, E 10%, T  5%, G  2%, Q  2%, K  2%, L  1%
+# 224 V 78%, A  8%, G  5%, M  2%, C  2%, T  1%
+# 264 F 77%, Y 22%
+# 267 G 61%, Q 17%, D 14%, S  2%, R  1%, N  1%, L  1%
+# 343 F 55%, S 25%, Y  8%, K  4%, H  2%, R  1%, M  1%
+# 618 F 79%, Y  5%, L  5%, H  2%, N  1%, V  1%, T  1%, K  1%
+
+custom_df.long <-data.frame(
+  Pos  = c(rep("X215", 11),rep("X224", 6), rep("X264", 2), rep("X267", 7), rep("X343", 7), rep("X618", 8)),
+  AA   = c( "S",  "D",  "N",  "A", "V", "E",  "T",  "G",  "Q",  "K",  "L",  "V",  "A",  "G",  "M",  "C",  "T",  "F",  "Y",  "G",  "Q",  "D",  "S",  "R",  "N",  "L",  "F",  "S",  "Y",  "K",  "H",  "R",  "M",  "F",  "Y",  "L",  "H",  "N",  "V",  "T", "K"),
+  Prob =c(0.25, 0.14, 0.12, 0.11, 0.1, 0.1, 0.05, 0.02, 0.02, 0.02, 0.01, 0.78, 0.08, 0.05, 0.02, 0.02, 0.01, 0.77, 0.22, 0.61, 0.17, 0.14, 0.02, 0.01, 0.01, 0.01, 0.55, 0.25, 0.08, 0.04, 0.02, 0.01, 0.01, 0.79, 0.05, 0.05, 0.02, 0.01, 0.01, 0.01, 0.01)
+)
+custom_df <- custom_df.long %>% pivot_wider(names_from = Pos, values_from = Prob)
+custom_df[is.na(custom_df)]<-0
+aa<-custom_df$AA
+custom_df<-custom_df[,-1]
+custom_df<-as.matrix(custom_df)
+rownames(custom_df)<-aa
+
+pdf("12.mwasExample/age.102274.sarA_2/sarA.seqlogo.pdf", width = 4, height = 4)
+ggseqlogo(custom_df, method='custom', seq_type='aa') +
+  ylab('Probability')+
+  theme(legend.position = "none")
+dev.off()
+```
+
+## 4 TG.101500.ileS
+
+### 4.1 Replication in DMP and LLD1
+
+```{r 4.1}
+if(!dir.exists("12.mwasExample")){dir.create("12.mwasExample")}
+if(!dir.exists("12.mwasExample/TG.101500.ileS")){dir.create("12.mwasExample/TG.101500.ileS")}
+
+mwasMeta.tg.ileS <- mwasMeta.cl.pt.full.filtered %>% dplyr::filter(Phenotype == "TG" & CHR == "101500" & Annotation == "ileS" & (ImpactLevel != "Low")) %>% dplyr::arrange(SNP)
+
+mwasMeta.tg.ileS.p    <- mwasMeta.tg.ileS[,c(29,40)]
+mwasMeta.tg.ileS.beta <- mwasMeta.tg.ileS[,c(27,38)]
+mwasMeta.tg.ileS.af2  <- mwasMeta.tg.ileS[,c(24,35)]
+
+rownames(mwasMeta.tg.ileS.beta) <- paste("SNP", mwasMeta.tg.ileS$SNP,sep = "")
+
+## heatmap
+mwasMeta.tg.ileS.af2 <- as.data.frame(mwasMeta.tg.ileS.af2)
+mwasMeta.tg.ileS.beta <- as.data.frame(mwasMeta.tg.ileS.beta)
+colnames(mwasMeta.tg.ileS.af2) <- c("DMP", "LLD1")
+colnames(mwasMeta.tg.ileS.beta) <- c("DMP", "LLD1")
+
+mwasMeta.tg.ileS.beta[mwasMeta.tg.ileS.p>0.05]<-0
+mwasMeta.tg.ileS.sign <- matrix(NA, nrow = nrow(mwasMeta.tg.ileS.p), ncol = ncol(mwasMeta.tg.ileS.p))
+mwasMeta.tg.ileS.sign[is.na(mwasMeta.tg.ileS.p)]<-"NA"
+mwasMeta.tg.ileS.sign[mwasMeta.tg.ileS.p > 0.05 ]<- " "
+mwasMeta.tg.ileS.sign[mwasMeta.tg.ileS.p < 0.05 ]<- "."
+mwasMeta.tg.ileS.sign[mwasMeta.tg.ileS.p < 0.001 ]<- "*"
+mwasMeta.tg.ileS.sign[mwasMeta.tg.ileS.p < 6.47E-6 ]<- "#"
+
+col_beta.high <- colorRamp2( c(min(mwasMeta.tg.ileS.beta, na.rm = T), quantile(as.matrix(mwasMeta.tg.ileS.beta), na.rm = T)[4], 0),
+                             c("#1772b4", "#619ac3","white") )
+
+pdf("12.mwasExample/TG.101500.ileS/TG.101500.ileS.pdf", height = 3, width = 4.5) # Main Fig. 5d
+mwasMeta.tg.ileS.beta %>%
+  Heatmap(.,
+          col = col_beta.high,
+          cluster_rows = FALSE,cluster_columns = FALSE,
+          show_row_dend = FALSE,show_column_dend = FALSE,
+          show_row_names = T,row_names_side = "left",
+          column_names_rot = 90,
+          row_labels = paste(mwasMeta.tg.ileS$SNP, mwasMeta.tg.ileS$A2,sep = "-"),
+          column_labels = c("DMP", "LLD1"),
+          border = TRUE,border_gp = gpar(col = "black",lwd = 1),
+          #left_annotation = phen_anno,
+          #right_annotation = phen_n_anno,
+          #top_annotation = cohort_anno,
+          heatmap_legend_param = list(direction = "horizontal",title = "Effect size",legend_width = unit(4, "cm")),
+          cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+            grid.text(as.matrix(mwasMeta.tg.ileS.sign)[i,j], x, y)}
+  )
+dev.off()
+
+# Boxplots
+all.tg.ileS.gt <- sampleCohorts
+colnames(all.tg.ileS.gt) <- c("ID", "Cohort")
+all.tg.ileS.gt$TG <- all.tg.ileS.gt$ID %>% match(rownames(full_phen)) %>% full_phen$TG[.]
+all.tg.ileS.gt <- all.tg.ileS.gt$ID %>% match(rownames(meta.ptDS)) %>% meta.ptDS[.,mwasMeta.tg.ileS$SNP] %>% cbind(all.tg.ileS.gt,.)
+all.tg.ileS.gt.long <- all.tg.ileS.gt %>% pivot_longer(4:ncol(all.tg.ileS.gt), names_to = "SNV", values_to = "Alt") %>% dplyr::filter(Cohort == "dmp" | Cohort == "lld1" ) %>% dplyr::filter(!is.na(Alt))  
+all.tg.ileS.gt.long$Cohort <- as.character(all.tg.ileS.gt.long$Cohort)
+
+all.tg.ileS.gt.long$Cohort <- toupper(all.tg.ileS.gt.long$Cohort)
+
+all.tg.ileS.gt.long$GT.group_alt <- ifelse(all.tg.ileS.gt.long$Alt==0, "No Alt", "With Alt")
+all.tg.ileS.gt.long$GT.group_ref <- ifelse(all.tg.ileS.gt.long$Alt==1, "No Ref", "With Ref")
+all.tg.ileS.gt.long$GT.group_het <- ifelse(all.tg.ileS.gt.long$Alt==0, "Ref", ifelse(all.tg.ileS.gt.long$Alt==1, "Het", "Alt"))
+all.tg.ileS.gt.long$GT.group_het <- factor(all.tg.ileS.gt.long$GT.group_het, levels = c("Ref", "Het", "Alt"))
+
+pdf("12.mwasExample/TG.101500.ileS/TG.101500.ileS.GT.alt.violin.pdf", width = 8, height = 4)
+all.tg.ileS.gt.long %>%
+  dplyr::filter(SNV == "101500_1146911" | SNV == "101500_1146916" |SNV == "101500_1146926" ) %>%
+  ggplot(aes(x=Cohort,y=qtrans(TG),fill = GT.group_alt, color = GT.group_alt))+
+  geom_violin(position = position_dodge(width = 0.8))+
+  geom_boxplot(width=0.2, fill="white",position = position_dodge(width = 0.8))+
+  ylab("Standardized TG level")+
+  scale_x_discrete(limits = cohort_order[1:2])+
+  scale_fill_manual(name=NULL, 
+                    breaks = c("No Alt", "With Alt"),
+                    labels = c("No Alt", "With Alt"),
+                    values = c("#158bb8", "#ee4866"))+
+  scale_color_manual(name=NULL, 
+                     breaks = c("No Alt", "With Alt"),
+                     labels = c("No Alt", "With Alt"),
+                     values = c("#158bb8", "#ee4866"))+
+  facet_grid(~SNV, scales='free')+
+  theme_minimal()
+dev.off()
+
+p_het <- all.tg.ileS.gt.long %>%
+  dplyr::filter(SNV == "101500_1146911" | SNV == "101500_1146916" | SNV == "101500_1146926") %>%
+  ggplot(aes(x=Cohort,y=qtrans(TG),fill = GT.group_het, color = GT.group_het))+
+  geom_violin(position = position_dodge(width = 0.8))+
+  geom_boxplot(width=0.2, fill="white",position = position_dodge(width = 0.8))+
+  ylab("Standardized TG level")+
+  scale_x_discrete(limits = cohort_order[1:2])+
+  facet_grid(~SNV, scales='free')+
+  theme_minimal()
+
+p_cor <- all.tg.ileS.gt.long %>%
+  dplyr::filter(SNV == "101500_1146911" | SNV == "101500_1146916" | SNV == "101500_1146926") %>%
+  ggplot()+
+  geom_point(aes(x = Alt, y = qtrans(TG)))+
+  ylab("Standardized TG level")+
+  facet_grid(Cohort~SNV, scales='free')+
+  theme_minimal()
+```
+
+### 4.2 Association with other phenotypes
+
+```{r 4.2}
+mwasMeta.101500.ileS <- mwasMeta.cl.pt.full.filtered %>% dplyr::filter(CHR == "101500" & Annotation == "ileS" & (ImpactLevel != "Low")) %>% dplyr::arrange(SNP)
+mwasMeta.101500.ileS$SNP <- paste(mwasMeta.101500.ileS$SNP, mwasMeta.101500.ileS$A2, sep = "_")
+
+mwasMeta.101500.ileS.p    <- mwasMeta.101500.ileS[,c(16,19, 104)] %>% pivot_wider(names_from = Phenotype, values_from = P.value) %>% data.frame(row.names = "SNP")
+mwasMeta.101500.ileS.beta <- mwasMeta.101500.ileS[,c(16,19, 102)] %>% pivot_wider(names_from = Phenotype, values_from = Effect)  %>% data.frame(row.names = "SNP")
+
+## heatmap
+
+mwasMeta.101500.ileS.beta[is.na(mwasMeta.101500.ileS.p)]<-0
+mwasMeta.tg.ileS.sign <- matrix(NA, nrow = nrow(mwasMeta.101500.ileS.p), ncol = ncol(mwasMeta.101500.ileS.p))
+mwasMeta.tg.ileS.sign[is.na(mwasMeta.101500.ileS.p)]<-" "
+mwasMeta.tg.ileS.sign[mwasMeta.101500.ileS.p > 0.05 ]<- " "
+mwasMeta.tg.ileS.sign[mwasMeta.101500.ileS.p < 0.05 ]<- "."
+mwasMeta.tg.ileS.sign[mwasMeta.101500.ileS.p < 0.001 ]<- "*"
+mwasMeta.tg.ileS.sign[mwasMeta.101500.ileS.p < 6.47E-6 ]<- "#"
+
+col_beta.high <- colorRamp2( c(min(mwasMeta.101500.ileS.beta, na.rm = T), 0, max(mwasMeta.101500.ileS.beta, na.rm = T) ),
+                             c("#1772b4", "white", "#ec2d7a") )
+
+pdf("12.mwasExample/TG.101500.ileS/101500.ileS.heatmap.pdf", height = 3, width = 5) # Main Fig. 5d
+mwasMeta.101500.ileS.beta %>%
+  Heatmap(.,
+          col = col_beta.high,
+          cluster_rows = FALSE,cluster_columns = FALSE,
+          show_row_dend = FALSE,show_column_dend = FALSE,
+          show_row_names = T,row_names_side = "left",
+          column_names_rot = 90,
+          #row_labels = paste(mwasMeta.tg.ileS$SNP, mwasMeta.tg.ileS$A2,sep = "-"),
+          #column_labels = c("DMP", "LLD1"),
+          border = TRUE,border_gp = gpar(col = "black",lwd = 1),
+          #left_annotation = phen_anno,
+          #right_annotation = phen_n_anno,
+          #top_annotation = cohort_anno,
+          heatmap_legend_param = list(direction = "horizontal",title = "Effect size",legend_width = unit(4, "cm")),
+          cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+            grid.text(as.matrix(mwasMeta.tg.ileS.sign)[i,j], x, y)}
+  )
+dev.off()
+```
+
+## 5 BMI.101429.clpB
+
+```{r 5.1}
+if(!dir.exists("12.mwasExample")){dir.create("12.mwasExample")}
+if(!dir.exists("12.mwasExample/BMI.101429.clpB")){dir.create("12.mwasExample/BMI.101429.clpB")}
+
+dmp.101429.clpB.phen <- data.frame(
+  ID= sampleCohorts$V1,
+  Cohort = sampleCohorts$V2,
+                     
+  Alt = coh.ptDS[match(sampleCohorts$V1, rownames(coh.ptDS)), match("101429_338229", colnames(coh.ptDS))],
+                    
+  BMI                = full_phen$BMI[match(sampleCohorts$V1, rownames(full_phen))],
+  TG                 = full_phen$TG[match(sampleCohorts$V1, rownames(full_phen))],
+  WaistCircumference = full_phen$WaistCircumference[match(sampleCohorts$V1, rownames(full_phen))],
+  Weight             = full_phen$Weight[match(sampleCohorts$V1, rownames(full_phen))],
+  WHR                = full_phen$WHR[match(sampleCohorts$V1, rownames(full_phen))],
+  DailyCalorieIntake = full_phen$DailyCalorieIntake[match(sampleCohorts$V1, rownames(full_phen))],
+  Sex                = full_phen$Sex[match(sampleCohorts$V1, rownames(full_phen))],
+  Age                = full_phen$Age[match(sampleCohorts$V1, rownames(full_phen))],
+  DeltaBMI           = full_phen$DeltaBMI[match(sampleCohorts$V1, rownames(full_phen))]
+  ) %>% dplyr::filter(Cohort == "dmp") %>% dplyr::filter(!is.na(Alt))
+
+dmp.101429.clpB.phen$GT.group_alt <- ifelse(dmp.101429.clpB.phen$Alt==0, "No Alt", "With Alt")
+dmp.101429.clpB.phen$GT.group_ref <- ifelse(dmp.101429.clpB.phen$Alt==1, "No Ref", "With Ref")
+dmp.101429.clpB.phen$GT.group_het <- ifelse(dmp.101429.clpB.phen$Alt==0, "Ref", ifelse(dmp.101429.clpB.phen$Alt==1, "Het", "Alt"))
+dmp.101429.clpB.phen$GT.group_het <- factor(dmp.101429.clpB.phen$GT.group_het, levels = c("Ref", "Het", "Alt"))
+
+# t.test(dmp.101429.clpB.phen$DailyCalorieIntake~as.factor(dmp.101429.clpB.phen$GT.group_alt), alternative = "greater")
+
+pdf("12.mwasExample/BMI.101429.clpB/BMI.101429.clpB.GT.alt.violin.pdf", width = 2.5, height = 4)
+ggplot(dmp.101429.clpB.phen, aes(x=GT.group_alt,y=qtrans(BMI),fill = GT.group_alt, color = GT.group_alt))+
+  geom_violin(position = position_dodge(width = 0.8))+
+  geom_boxplot(width=0.2, fill="white",position = position_dodge(width = 0.8))+
+  xlab(NULL)+
+  ylab("Standardized BMI")+
+  scale_fill_manual(name=NULL, 
+                    breaks = c("No Alt", "With Alt"),
+                    labels = c("No Alt", "With Alt"),
+                    values = c("#158bb8", "#ee4866"))+
+  scale_color_manual(name=NULL, 
+                     breaks = c("No Alt", "With Alt"),
+                     labels = c("No Alt", "With Alt"),
+                     values = c("#158bb8", "#ee4866"))+
+  theme_minimal()+
+  theme(legend.position = "none")
+dev.off()
+
+
+pdf("12.mwasExample/BMI.101429.clpB/TG.101429.clpB.GT.alt.violin.pdf", width = 2.5, height = 4)
+ggplot(dmp.101429.clpB.phen, aes(x=GT.group_alt,y=qtrans(TG),fill = GT.group_alt, color = GT.group_alt))+
+  geom_violin(position = position_dodge(width = 0.8))+
+  geom_boxplot(width=0.2, fill="white",position = position_dodge(width = 0.8))+
+  xlab(NULL)+
+  ylab("Standardized TG level")+
+  scale_fill_manual(name=NULL, 
+                    breaks = c("No Alt", "With Alt"),
+                    labels = c("No Alt", "With Alt"),
+                    values = c("#158bb8", "#ee4866"))+
+  scale_color_manual(name=NULL, 
+                     breaks = c("No Alt", "With Alt"),
+                     labels = c("No Alt", "With Alt"),
+                     values = c("#158bb8", "#ee4866"))+
+  theme_minimal()+
+  theme(legend.position = "none")
+dev.off()
+
+pdf("12.mwasExample/BMI.101429.clpB/WaistCircumference.101429.clpB.GT.alt.violin.pdf", width = 2.5, height = 4)
+ggplot(dmp.101429.clpB.phen, aes(x=GT.group_alt,y=qtrans(WaistCircumference),fill = GT.group_alt, color = GT.group_alt))+
+  geom_violin(position = position_dodge(width = 0.8))+
+  geom_boxplot(width=0.2, fill="white",position = position_dodge(width = 0.8))+
+  xlab(NULL)+
+  ylab("Standardized waist circumference")+
+  scale_fill_manual(name=NULL, 
+                    breaks = c("No Alt", "With Alt"),
+                    labels = c("No Alt", "With Alt"),
+                    values = c("#158bb8", "#ee4866"))+
+  scale_color_manual(name=NULL, 
+                     breaks = c("No Alt", "With Alt"),
+                     labels = c("No Alt", "With Alt"),
+                     values = c("#158bb8", "#ee4866"))+
+  theme_minimal()+
+  theme(legend.position = "none")
+dev.off()
+
+pdf("12.mwasExample/BMI.101429.clpB/Weight.101429.clpB.GT.alt.violin.pdf", width = 2.5, height = 4)
+ggplot(dmp.101429.clpB.phen, aes(x=GT.group_alt,y=qtrans(Weight),fill = GT.group_alt, color = GT.group_alt))+
+  geom_violin(position = position_dodge(width = 0.8))+
+  geom_boxplot(width=0.2, fill="white",position = position_dodge(width = 0.8))+
+  xlab(NULL)+
+  ylab("Standardized weight level")+
+  scale_fill_manual(name=NULL, 
+                    breaks = c("No Alt", "With Alt"),
+                    labels = c("No Alt", "With Alt"),
+                    values = c("#158bb8", "#ee4866"))+
+  scale_color_manual(name=NULL, 
+                     breaks = c("No Alt", "With Alt"),
+                     labels = c("No Alt", "With Alt"),
+                     values = c("#158bb8", "#ee4866"))+
+  theme_minimal()+
+  theme(legend.position = "none")
+dev.off()
+
+pdf("12.mwasExample/BMI.101429.clpB/WHR.101429.clpB.GT.alt.violin.pdf", width = 2.5, height = 4)
+ggplot(dmp.101429.clpB.phen, aes(x=GT.group_alt,y=qtrans(WHR),fill = GT.group_alt, color = GT.group_alt))+
+  geom_violin(position = position_dodge(width = 0.8))+
+  geom_boxplot(width=0.2, fill="white",position = position_dodge(width = 0.8))+
+  xlab(NULL)+
+  ylab("Standardized WHR")+
+  scale_fill_manual(name=NULL, 
+                    breaks = c("No Alt", "With Alt"),
+                    labels = c("No Alt", "With Alt"),
+                    values = c("#158bb8", "#ee4866"))+
+  scale_color_manual(name=NULL, 
+                     breaks = c("No Alt", "With Alt"),
+                     labels = c("No Alt", "With Alt"),
+                     values = c("#158bb8", "#ee4866"))+
+  theme_minimal()+
+  theme(legend.position = "none")
+dev.off()
+```
+
+## 6 Catalogue summary
+
+```{r 6}
+catalogue.intrinsic.prio <- catalogue %>% dplyr::filter(Study == "Meta-analysis") %>% dplyr::filter(PhenotypeSuperClass=="Intrinsic" & SNV.ImpactLevel != "Low") %>% dplyr::filter( (Phenotype != "Sex") & (Phenotype != "Age") )
+
+
+```

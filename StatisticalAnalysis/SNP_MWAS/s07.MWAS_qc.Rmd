@@ -1,0 +1,234 @@
+---
+title: "MWAS summary"
+author: "Daoming Wang"
+date: "2023/11/14"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+library(rgl)
+```
+
+### 1.2 Input
+
+```{r 1.2}
+speSumm.long <- read.table("00.rawData/speSumm/geno0.9.maf0.05.thin1000.LD.summ.tsv", sep = "\t",header = T)
+mwasSumm.EMMAX.long <-read.table("00.rawData/mwas/summ/EMMAX.summ.tsv",header = T)
+mwasSumm.GCTA.long <-read.table("00.rawData/mwas/summ/GCTA.summ.tsv",header = T)
+
+phenInfo<-read.table("02.phenotype_summary/phenInfoSumm.tsv", sep = "\t",header = T, check.names = F)
+speInfo<-read.table("03.genotypeSummary/speInfoSumm.tsv",sep = "\t", header = T, check.names = F)
+```
+
+## 2 Clean table
+
+```{r 2}
+# Species summary
+speSumm.long$Stat <- paste(speSumm.long$Parameter, speSumm.long$Stat)
+speSumm <- speSumm.long[,c(4,1,2,3)] %>% pivot_wider(names_from = Stat, values_from = Value)
+
+# EMMAX
+mwasSumm.EMMAX <- pivot_wider(mwasSumm.EMMAX.long, names_from = Parameter, values_from = Value) %>% as.data.frame
+for (i in c(4:14)) {
+  mwasSumm.EMMAX[,i] <- as.numeric(mwasSumm.EMMAX[,i])
+}
+
+mwasSumm.EMMAX.N.SNP100 <- mwasSumm.EMMAX %>% dplyr::filter(N.SNP >= 100)
+mwasSumm.EMMAX.N.SNP100$Key <- paste(mwasSumm.EMMAX.N.SNP100$Study, mwasSumm.EMMAX.N.SNP100$Species, mwasSumm.EMMAX.N.SNP100$Phenotype, sep = "_")
+
+# GCTA
+mwasSumm.GCTA <- pivot_wider(mwasSumm.GCTA.long, names_from = Parameter, values_from = Value) %>% as.data.frame
+for (i in c(4:14)) {
+  mwasSumm.GCTA[,i] <- as.numeric(mwasSumm.GCTA[,i])
+}
+
+mwasSumm.GCTA.N.SNP100 <- mwasSumm.GCTA %>% dplyr::filter(N.SNP >= 100)
+mwasSumm.GCTA.N.SNP100$Key <- paste(mwasSumm.GCTA.N.SNP100$Study, mwasSumm.GCTA.N.SNP100$Species, mwasSumm.GCTA.N.SNP100$Phenotype, sep = "_")
+
+mwasSumm.N.SNP100 <- dplyr::full_join(mwasSumm.EMMAX.N.SNP100, mwasSumm.GCTA.N.SNP100, by = "Key", suffix = c(".REML", ".HE") )
+```
+
+## 3 Export for merge
+
+```{r 3}
+mwasSumm.SNP100 <- rbind(mwasSumm.GCTA.N.SNP100, mwasSumm.EMMAX.N.SNP100)
+
+mwasSumm.SNP100.qc <- mwasSumm.SNP100 %>%
+  dplyr::filter(Lambda > 0.5 & Lambda < 5)
+mwasSumm.SNP100.qc$Tool<-NA
+mwasSumm.SNP100.qc$Tool[mwasSumm.SNP100.qc$Algorithm=="REML"] <- "EMMAX"
+mwasSumm.SNP100.qc$Tool[mwasSumm.SNP100.qc$Algorithm=="HE"] <- "GCTA"
+
+mwasSumm.SNP100.qc.list <- mwasSumm.SNP100.qc %>%
+  dplyr::select(Study, Phenotype, Tool) %>% .[!duplicated(.), ]
+
+phen.tool.list <- mwasSumm.SNP100.qc.list %>%
+  dplyr::select(Phenotype, Tool) %>% .[!duplicated(.), ]
+
+
+if(!dir.exists("07.MWAS_QC/")){dir.create("07.MWAS_QC/")}
+write.table(mwasSumm.SNP100.qc, "07.MWAS_QC/mwasSumm.SNP100.qc.tsv",
+            sep = "\t", row.names = F, col.names = T, quote = F)
+write.table(mwasSumm.SNP100.qc.list, "07.MWAS_QC/mwasSumm.SNP100.qc.list.tsv",
+            sep = "\t", row.names = F, col.names = T, quote = F)
+write.table(phen.tool.list, "07.MWAS_QC/phen.tool.list.tsv",
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+## 4 Visulization
+
+### 4.1 Impact of LD
+
+```{r 4.1}
+lambda.summ <- mwasSumm.N.SNP100 %>%
+  dplyr::group_by(Study.REML, Species.REML) %>%
+  dplyr::summarise(Lambda.REML = median(Lambda.REML, na.rm = TRUE),
+            Lambda.HE   = median(Lambda.HE,   na.rm = TRUE)) %>%
+  as.data.frame()
+
+colnames(lambda.summ) <- c("Cohort", "Species", "Lambda.REML", "Lambda.HE")
+
+lambda.summ$ExtremLambdaProp.REML <- NA
+lambda.summ$ExtremLambdaProp.HE   <- NA
+
+for (i in 1:nrow(lambda.summ)) {
+#  i <- 1
+  mwasSumm.N.SNP100_i <- mwasSumm.N.SNP100 %>% 
+    dplyr::filter(Study.REML == lambda.summ$Cohort[i] & Species.REML == lambda.summ$Species[i])
+  lambda.summ$ExtremLambdaProp.REML[i] <- 
+    sum(mwasSumm.N.SNP100_i$Lambda.REML > 2 | mwasSumm.N.SNP100_i$Lambda.REML < 0.5, na.rm = T)/sum(!is.na(mwasSumm.N.SNP100_i$Lambda.REML))
+  lambda.summ$ExtremLambdaProp.HE[i]   <- 
+    sum(mwasSumm.N.SNP100_i$Lambda.HE > 2 | mwasSumm.N.SNP100_i$Lambda.HE < 0.5, na.rm = T)/sum(!is.na(mwasSumm.N.SNP100_i$Lambda.HE))
+}
+
+ld.summ <- speSumm %>%
+  group_by(Cohort, Species) %>%
+  summarise(LD = median(`LD Median`, na.rm = TRUE))
+
+lambda.ld.summ <- speSumm %>%
+  inner_join(lambda.summ, by = c("Cohort", "Species"))
+
+# Reshaping the data
+lambda.ld.summ$Key <- paste(lambda.ld.summ$Cohort, lambda.ld.summ$Species, sep = "_")
+lambda.ld.summ.long <- pivot_longer(lambda.ld.summ, cols = c("ExtremLambdaProp.REML", "ExtremLambdaProp.HE"), names_to = "Model", values_to = "ExtremLambdaProp")
+
+# Creating the plot
+lambda.ld.summ.long %>%
+  dplyr::filter(Cohort=="dmp") %>%
+ggplot(aes(Model, ExtremLambdaProp, group = Model)) +
+  geom_boxplot(aes(color = Model)) +
+  geom_line(aes(group = Key), alpha = 0.2) +
+  geom_point(position = position_dodge(width = 0.75)) 
+```
+
+
+### 3.2 Impact of phenotype
+
+```{r 3.2}
+lambda.phen.summ <- mwasSumm.N.SNP100 %>%
+  dplyr::group_by(Study.REML, Phenotype.REML) %>%
+  dplyr::summarise(Lambda.REML = median(Lambda.REML, na.rm = TRUE),
+            Lambda.HE   = median(Lambda.HE,   na.rm = TRUE)) %>%
+  as.data.frame(lambda.summ)
+
+colnames(lambda.phen.summ) <- c("Cohort", "Phenotype", "Lambda.REML", "Lambda.HE")
+
+lambda.phen.summ.info <- dplyr::left_join(lambda.phen.summ, phenInfo, by = c("Phenotype" = "UnifiedName"))
+
+# Reshaping the data
+lambda.phen.summ.info$Key <- paste(lambda.phen.summ.info$Cohort, lambda.phen.summ.info$Phenotype, sep = "_")
+lambda.phen.summ.info.long <- pivot_longer(lambda.phen.summ.info, cols = c("Lambda.REML", "Lambda.HE"), names_to = "Model", values_to = "Lambda")
+
+## Overview
+lambda.phen.summ.info.long %>%
+  dplyr::filter(Cohort=="dmp") %>%
+  ggplot(aes(Phenotype, Lambda, group = Model))+
+  geom_bar(aes(color = ValueType, fill = ValueType), stat="identity")
+
+lambda.phen.summ.info.long %>%
+  dplyr::filter(Cohort=="dmp") %>%
+  ggplot(aes(Phenotype, Lambda, group = Model))+
+  geom_bar(aes(color = Model, fill = Model), stat="identity",position=position_dodge())
+
+lambda.phen.summ.info.long %>%
+  dplyr::filter(Cohort=="dmp" & ValueType != "Binary") %>%
+  ggplot(aes(Phenotype, Lambda, group = Model))+
+  geom_point(aes(color = Model, fill = Model),position=position_dodge())+
+  geom_segment(aes(x=Phenotype, xend=Phenotype, y=1, yend=Lambda),position=position_dodge())+
+  theme_light()
+
+
+lambda.phen.summ.info.long %>%
+  dplyr::filter(Cohort=="dmp" & ValueType == "Binary") %>%
+  ggplot(aes(Phenotype, Lambda, group = Model))+
+  geom_point(aes(color = Model, fill = Model),position=position_dodge())+
+  geom_segment(aes(x=Phenotype, xend=Phenotype, y=1, yend=Lambda),position=position_dodge())+
+  theme_light()
+
+lambda.phen.summ.info.long %>%
+  dplyr::filter(Cohort=="dmp" & ValueType == "Binary" ) %>%
+  ggplot(aes(SE.or.Percent_1.DMP, Lambda, group = Model))+
+  geom_point(aes(color = Model, fill = Model),position=position_dodge())+
+  theme_light()
+```
+
+### 3.3 Impact of phenotype and LD
+
+```{r 3.3}
+mwasSumm.N.SNP100.phen <- dplyr::left_join(mwasSumm.N.SNP100, phenInfo, by = c("Phenotype.REML" = "UnifiedName"))
+
+mwasSumm.N.SNP100.phen.contin <- mwasSumm.N.SNP100.phen %>% dplyr::filter(ValueType != "Binary")
+
+contin.lambda.summ <- mwasSumm.N.SNP100.phen.contin %>%
+  dplyr::group_by(Study.REML, Species.REML) %>%
+  dplyr::summarise(Lambda.REML = median(Lambda.REML, na.rm = TRUE),
+            Lambda.HE   = median(Lambda.HE,   na.rm = TRUE)) %>%
+  as.data.frame(lambda.summ)
+
+colnames(contin.lambda.summ) <- c("Cohort", "Species", "Lambda.REML", "Lambda.HE")
+
+
+contin.lambda.summ$ExtremLambdaProp.REML <- NA
+contin.lambda.summ$ExtremLambdaProp.HE   <- NA
+
+for (i in 1:nrow(contin.lambda.summ)) {
+#  i <- 1
+  mwasSumm.N.SNP100_i <- mwasSumm.N.SNP100 %>% 
+    dplyr::filter(Study.REML == contin.lambda.summ$Cohort[i] & Species.REML == contin.lambda.summ$Species[i])
+  contin.lambda.summ$ExtremLambdaProp.REML[i] <- 
+    sum(mwasSumm.N.SNP100_i$Lambda.REML > 2 | mwasSumm.N.SNP100_i$Lambda.REML < 0.5, na.rm = T)/sum(!is.na(mwasSumm.N.SNP100_i$Lambda.REML))
+  contin.lambda.summ$ExtremLambdaProp.HE[i]   <- 
+    sum(mwasSumm.N.SNP100_i$Lambda.HE > 2 | mwasSumm.N.SNP100_i$Lambda.HE < 0.5, na.rm = T)/sum(!is.na(mwasSumm.N.SNP100_i$Lambda.HE))
+}
+
+contin.lambda.ld.summ <- speSumm %>%
+  inner_join(contin.lambda.summ, by = c("Cohort", "Species"))
+
+contin.lambda.ld.summ %>%
+  dplyr::filter(Cohort=="dmp" ) %>%
+  ggplot(aes(`LD Median`, ExtremLambdaProp.HE))+
+  geom_point()+
+  theme_light()
+```
+

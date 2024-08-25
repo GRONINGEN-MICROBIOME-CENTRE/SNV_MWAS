@@ -1,0 +1,1397 @@
+---
+title: "Genotype summary"
+author: "Daoming Wang"
+date: "2023/08/09"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+rawSpeInfo<-read.table("00.rawData/speInfo/GT_Pro.909species.info.txt",sep = "\t", header = T, check.names = F)
+speInfo<-read.table("00.rawData/speInfo/GT_Pro.909species.info.tsv",sep = "\t", header = T, check.names = F)
+speList <- read.table("00.rawData/speInfo/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.geno0.9.maf0.05.snpN1000.species.list")
+phenInfo<-read.table("01.cleanData/phenInfo/phenInfo.tsv", sep = "\t",header = T, check.names = F)
+phenConver<-read.table("01.cleanData/phenInfo/phenConver.tsv",sep = "\t",header = T,check.names = F)
+sampleCohorts<-read.table("00.rawData/cohortList/sampleCohorts.tsv",header = F)
+
+rawSpeNum<-read.csv("00.rawData/snpSumm/raw/speN/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.species.list",sep = "\t", header = F)
+rawSpeNum.dmp<-read.table("00.rawData/snpSumm/raw/speN/dmp.species.list",header = F)
+rawSpeNum.lld1<-read.table("00.rawData/snpSumm/raw/speN/lld1.species.list",header = F)
+rawSpeNum.lld2_apk<-read.table("00.rawData/snpSumm/raw/speN/lld2_apk.species.list",header = F)
+rawSpeNum.lld2_fsk<-read.table("00.rawData/snpSumm/raw/speN/lld2_fsk.species.list",header = F)
+rawSpeNum.500fg_apk<-read.table("00.rawData/snpSumm/raw/speN/500fg_apk.species.list",header = F)
+rawSpeNum.500fg_fsk<-read.table("00.rawData/snpSumm/raw/speN/500fg_fsk.species.list",header = F)
+rawSpeNum.300ob<-read.table("00.rawData/snpSumm/raw/speN/300ob.species.list",header = F)
+rawSpeNum.ibd<-read.table("00.rawData/snpSumm/raw/speN/ibd.species.list",header = F)
+rawSpeNum.300tzfg<-read.table("00.rawData/snpSumm/raw/speN/300tzfg.species.list",header = F)
+
+rawSnpNum<-read.csv("00.rawData/snpSumm/raw/snpN/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.SNP.N.txt",sep = "\t", header = F)
+rawSnpNum.dmp<-read.table("00.rawData/snpSumm/raw/snpN/dmp.SNP.N.txt",header = F)
+rawSnpNum.lld1<-read.table("00.rawData/snpSumm/raw/snpN/lld1.SNP.N.txt",header = F)
+rawSnpNum.lld2_apk<-read.table("00.rawData/snpSumm/raw/snpN/lld2_apk.SNP.N.txt",header = F)
+rawSnpNum.lld2_fsk<-read.table("00.rawData/snpSumm/raw/snpN/lld2_fsk.SNP.N.txt",header = F)
+rawSnpNum.500fg_apk<-read.table("00.rawData/snpSumm/raw/snpN/500fg_apk.SNP.N.txt",header = F)
+rawSnpNum.500fg_fsk<-read.table("00.rawData/snpSumm/raw/snpN/500fg_fsk.SNP.N.txt",header = F)
+rawSnpNum.300ob<-read.table("00.rawData/snpSumm/raw/snpN/300ob.SNP.N.txt",header = F)
+rawSnpNum.ibd<-read.table("00.rawData/snpSumm/raw/snpN/ibd.SNP.N.txt",header = F)
+rawSnpNum.300tzfg<-read.table("00.rawData/snpSumm/raw/snpN/300tzfg.SNP.N.txt",header = F)
+
+bsCleanSnpNum<-read.csv("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.perCohort.geno0.9.maf0.05.commonSNP.N.txt",sep = "\t", header = F)
+bsCleanSnpNum.dmp<-read.table("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/dmp.geno0.9.maf0.05.commonSNP.N.txt",header = F)
+bsCleanSnpNum.lld1<-read.table("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/lld1.geno0.9.maf0.05.commonSNP.N.txt",header = F)
+bsCleanSnpNum.lld2_apk<-read.table("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/lld2_apk.geno0.9.maf0.05.commonSNP.N.txt",header = F)
+bsCleanSnpNum.lld2_fsk<-read.table("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/lld2_fsk.geno0.9.maf0.05.commonSNP.N.txt",header = F)
+bsCleanSnpNum.500fg_apk<-read.table("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/500fg_apk.geno0.9.maf0.05.commonSNP.N.txt",header = F)
+bsCleanSnpNum.500fg_fsk<-read.table("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/500fg_fsk.geno0.9.maf0.05.commonSNP.N.txt",header = F)
+bsCleanSnpNum.300ob<-read.table("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/300ob.geno0.9.maf0.05.commonSNP.N.txt",header = F)
+bsCleanSnpNum.ibd<-read.table("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/ibd.geno0.9.maf0.05.commonSNP.N.txt",header = F)
+bsCleanSnpNum.300tzfg<-read.table("00.rawData/snpSumm/beforeSelectionCommonSnp/snpN/300tzfg.geno0.9.maf0.05.commonSNP.N.txt",header = F)
+
+cleanSnpNum<-read.csv("00.rawData/snpSumm/clean/snpN/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.base1.perCohort.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",sep = "\t", header = F)
+cleanSnpNum.dmp<-read.table("00.rawData/snpSumm/clean/snpN/dmp.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",header = F)
+cleanSnpNum.lld1<-read.table("00.rawData/snpSumm/clean/snpN/lld1.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",header = F)
+cleanSnpNum.lld2_apk<-read.table("00.rawData/snpSumm/clean/snpN/lld2_apk.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",header = F)
+cleanSnpNum.lld2_fsk<-read.table("00.rawData/snpSumm/clean/snpN/lld2_fsk.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",header = F)
+cleanSnpNum.500fg_apk<-read.table("00.rawData/snpSumm/clean/snpN/500fg_apk.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",header = F)
+cleanSnpNum.500fg_fsk<-read.table("00.rawData/snpSumm/clean/snpN/500fg_fsk.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",header = F)
+cleanSnpNum.300ob<-read.table("00.rawData/snpSumm/clean/snpN/300ob.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",header = F)
+cleanSnpNum.ibd<-read.table("00.rawData/snpSumm/clean/snpN/ibd.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",header = F)
+cleanSnpNum.300tzfg<-read.table("00.rawData/snpSumm/clean/snpN/300tzfg.geno0.9.maf0.05.snpN1000.commonSNP.N.txt",header = F)
+
+# cleanSnp<-read.table("00.rawData/commonSnp/dmp.lld1.lld2.300ob.500fg.ibd.perCohort.geno0.9.maf0.05.snpN1000.commonSNP.list",header = F)
+# cleanSnp.dmp<-read.table("00.rawData/commonSnp/dmp.geno0.9.maf0.05.snpN1000.commonSNP.list",header = F)
+# cleanSnp.lld1<-read.table("00.rawData/commonSnp/lld1.geno0.9.maf0.05.snpN1000.commonSNP.list",header = F)
+# cleanSnp.lld2<-read.table("00.rawData/commonSnp/lld2.geno0.9.maf0.05.snpN1000.commonSNP.list",header = F)
+# cleanSnp.300ob<-read.table("00.rawData/commonSnp/300ob.geno0.9.maf0.05.snpN1000.commonSNP.list",header = F)
+# cleanSnp.500fg<-read.table("00.rawData/commonSnp/500fg.geno0.9.maf0.05.snpN1000.commonSNP.list",header = F)
+# cleanSnp.ibd<-read.table("00.rawData/commonSnp/ibd.geno0.9.maf0.05.snpN1000.commonSNP.list",header = F)
+
+snpAnno <- fread("00.rawData/snpAnno/dmp.lld1.lld2.300ob.500fg.ibd.tzfg.base1.perCohort.geno0.9.maf0.05.snpN1000.annotation.tsv", sep = "\t", header = F)
+geneAnno.raw <- fread("00.rawData/snpAnno/UHGG_909species.gff", sep = "\t", header = F)
+```
+
+### 1.3 General settings
+
+```{r 1.3}
+speInfo <- speInfo[speInfo$`Species ID` %in% speList$V1,]
+
+cohort_order       <- c("dmp", "lld1", "lld2_apk","lld2_fsk", "500fg_apk", "500fg_fsk", "300ob", "ibd", "300tzfg")
+cohort_label       <- c("DMP", "LLD1", "LLD2-APK","LLD2-FSK", "500FG-APK", "500FG-FSK", "300OB", "IBD", "300TZFG")
+cohort_title_label <- c("DMP", "LLD1", "LLD2_APK","LLD2_FSK", "500FG_APK", "500FG_FSK", "300OB", "IBD", "300TZFG")
+
+cohort_color<-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                pal_material("red")(6)[c(5)],                  # IBD
+                pal_material("amber")(6)[c(5)],                # 300OOB
+                pal_material("indigo")(6)[c(3,5)],             # 500FG-FSK 500FG-APK
+                pal_material("cyan")(6)[c(5)],                 # LLD2-FSK
+                pal_material("light-blue")(6)[c(3,5)],         # LLD2-APK LLD1
+                pal_material("light-green")(6)[c(5)]) %>% rev  # DMP
+
+Cohort_order<-c("all", cohort_order)
+Cohort_label<-c("All", cohort_label)
+Cohort_color<-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                pal_material("red")(6)[c(5)],                  # IBD
+                pal_material("amber")(6)[c(5)],                # 300OOB
+                pal_material("indigo")(6)[c(3,5)],             # 500FG-FSK 500FG-APK
+                pal_material("cyan")(6)[c(5)],                 # LLD2-FSK
+                pal_material("light-blue")(6)[c(3,5)],         # LLD2-APK LLD1
+                pal_material("light-green")(6)[c(5)],          # DMP
+                "grey30"                                       # All
+                ) %>% rev  
+
+## v2
+cohort_order.v2       <- c("dmp", "lld1", "500fg_fsk", "300ob", "ibd", "300tzfg")
+cohort_label.v2       <- c("DMP", "LLD1", "500FG-FSK", "300OB", "IBD", "300TZFG")
+cohort_title_label.v2 <- c("DMP", "LLD1", "500FG", "300OB", "IBD", "300TZFG")
+
+cohort_color.v2 <-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                pal_material("red")(6)[c(5)],                  # IBD
+                pal_material("amber")(6)[c(5)],                # 300OOB
+                pal_material("indigo")(6)[c(3)],             # 500FG-FSK
+                pal_material("light-blue")(6)[c(5)],         # LLD1
+                pal_material("light-green")(6)[c(5)]) %>% rev  # DMP
+
+Cohort_order.v2<-c("all", cohort_order.v2)
+Cohort_label.v2<-c("All", cohort_label.v2)
+Cohort_color.v2<-c(pal_material("grey")(6)[c(6)],                 # 300TZFG
+                pal_material("red")(6)[c(5)],                  # IBD
+                pal_material("amber")(6)[c(5)],                # 300OOB
+                pal_material("indigo")(6)[c(3)],             # 500FG-FSK
+                pal_material("light-blue")(6)[c(5)],         # LLD1
+                pal_material("light-green")(6)[c(5)],          # DMP
+                "grey30"                                       # All
+                ) %>% rev 
+
+##
+
+
+if(!dir.exists("03.genotypeSummary")){dir.create("03.genotypeSummary")}
+```
+
+
+## 2 Raw genotypes
+
+### 2.1 Summary raw genotypes
+
+```{r 2.1}
+# Number of species detected with SNPs in each cohort
+rawSpeNum.df<-data.frame(Cohort = Cohort_label,
+                         RawSpeN = c(nrow(rawSpeNum),
+                                     nrow(rawSpeNum.dmp),
+                                     nrow(rawSpeNum.lld1),
+                                     nrow(rawSpeNum.lld2_apk),
+                                     nrow(rawSpeNum.lld2_fsk),
+                                     nrow(rawSpeNum.500fg_apk),
+                                     nrow(rawSpeNum.500fg_fsk),
+                                     nrow(rawSpeNum.300ob),
+                                     nrow(rawSpeNum.ibd),
+                                     nrow(rawSpeNum.300tzfg)))
+rawSpeNum.df$Cohort<-factor(rawSpeNum.df$Cohort, levels = Cohort_label)
+
+p_rawSpeN<-ggplot(rawSpeNum.df, aes(x=Cohort, y=RawSpeN,color = Cohort,fill = Cohort))+
+  geom_col()+
+  xlab(NULL)+
+  ylab("Number of species")+
+  scale_x_discrete(limits = rawSpeNum.df$Cohort,
+                   breaks=Cohort_label,
+                   labels=Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_label,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_label,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Total number of raw SNPs in each cohort
+rawSnpNum.df<-data.frame(Cohort = Cohort_label,
+                         RawSnpN = c(sum(rawSnpNum$V1),
+                                     sum(rawSnpNum.dmp$V1),
+                                     sum(rawSnpNum.lld1$V1),
+                                     sum(rawSnpNum.lld2_apk$V1),
+                                     sum(rawSnpNum.lld2_fsk$V1),
+                                     sum(rawSnpNum.500fg_apk$V1),
+                                     sum(rawSnpNum.500fg_fsk$V1),
+                                     sum(rawSnpNum.300ob$V1),
+                                     sum(rawSnpNum.ibd$V1),
+                                     sum(rawSnpNum.300tzfg$V1)
+                                     ))
+rawSnpNum.df$Cohort<-factor(rawSnpNum.df$Cohort, levels = Cohort_label)
+
+p_rawSnpN<-ggplot(rawSnpNum.df, aes(x=Cohort, y=RawSnpN,color = Cohort,fill = Cohort))+
+  geom_col()+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = rawSnpNum.df$Cohort,
+                   breaks=Cohort_label,
+                   labels=Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_label,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_label,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Number of raw SNPs of each species in each cohort
+# all
+rawSumm<-rawSnpNum
+colnames(rawSumm)<-c("rawSnpNum", "SpeciesId")
+rawSumm$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm$MutationRateCore<-rawSumm$rawSnpNum/rawSumm$CoreGenomeSize
+rawSumm$Cohort<-rep('all', nrow(rawSumm))
+rawSumm$commonSnpNum <- match(rawSumm$SpeciesId, bsCleanSnpNum$V2) %>% bsCleanSnpNum$V1[.]
+rawSumm$commonSnpNum[is.na(rawSumm$commonSnpNum)]<-0
+rawSumm$rareSnpNum<-rawSumm$rawSnpNum-rawSumm$commonSnpNum
+
+write.table(rawSumm, "03.genotypeSummary/rawSumm.tsv",sep = "\t",col.names = T, row.names = F, quote = F)
+
+# dmp
+rawSumm.dmp<-rawSnpNum.dmp
+colnames(rawSumm.dmp)<-c("rawSnpNum", "SpeciesId")
+rawSumm.dmp$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm.dmp$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm.dmp$MutationRateCore<-rawSumm.dmp$rawSnpNum/rawSumm.dmp$CoreGenomeSize
+rawSumm.dmp$Cohort<-rep('dmp', nrow(rawSumm.dmp))
+rawSumm.dmp$commonSnpNum <- match(rawSumm.dmp$SpeciesId, bsCleanSnpNum.dmp$V2) %>% bsCleanSnpNum.dmp$V1[.]
+rawSumm.dmp$commonSnpNum[is.na(rawSumm.dmp$commonSnpNum)]<-0
+rawSumm.dmp$rareSnpNum<-rawSumm.dmp$rawSnpNum-rawSumm.dmp$commonSnpNum
+
+# lld1
+rawSumm.lld1<-rawSnpNum.lld1
+colnames(rawSumm.lld1)<-c("rawSnpNum", "SpeciesId")
+rawSumm.lld1$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm.lld1$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm.lld1$MutationRateCore<-rawSumm.lld1$rawSnpNum/rawSumm.lld1$CoreGenomeSize
+rawSumm.lld1$Cohort<-rep('lld1', nrow(rawSumm.lld1))
+rawSumm.lld1$commonSnpNum <- match(rawSumm.lld1$SpeciesId, bsCleanSnpNum.lld1$V2) %>% bsCleanSnpNum.lld1$V1[.]
+rawSumm.lld1$commonSnpNum[is.na(rawSumm.lld1$commonSnpNum)]<-0
+rawSumm.lld1$rareSnpNum<-rawSumm.lld1$rawSnpNum-rawSumm.lld1$commonSnpNum
+
+# lld2-apk
+rawSumm.lld2_apk<-rawSnpNum.lld2_apk
+colnames(rawSumm.lld2_apk)<-c("rawSnpNum", "SpeciesId")
+rawSumm.lld2_apk$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm.lld2_apk$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm.lld2_apk$MutationRateCore<-rawSumm.lld2_apk$rawSnpNum/rawSumm.lld2_apk$CoreGenomeSize
+rawSumm.lld2_apk$Cohort<-rep('lld2_apk', nrow(rawSumm.lld2_apk))
+rawSumm.lld2_apk$commonSnpNum <- match(rawSumm.lld2_apk$SpeciesId, bsCleanSnpNum.lld2_apk$V2) %>% bsCleanSnpNum.lld2_apk$V1[.]
+rawSumm.lld2_apk$commonSnpNum[is.na(rawSumm.lld2_apk$commonSnpNum)]<-0
+rawSumm.lld2_apk$rareSnpNum<-rawSumm.lld2_apk$rawSnpNum-rawSumm.lld2_apk$commonSnpNum
+
+# lld2-fsk
+rawSumm.lld2_fsk<-rawSnpNum.lld2_fsk
+colnames(rawSumm.lld2_fsk)<-c("rawSnpNum", "SpeciesId")
+rawSumm.lld2_fsk$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm.lld2_fsk$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm.lld2_fsk$MutationRateCore<-rawSumm.lld2_fsk$rawSnpNum/rawSumm.lld2_fsk$CoreGenomeSize
+rawSumm.lld2_fsk$Cohort<-rep('lld2_fsk', nrow(rawSumm.lld2_fsk))
+rawSumm.lld2_fsk$commonSnpNum <- match(rawSumm.lld2_fsk$SpeciesId, bsCleanSnpNum.lld2_fsk$V2) %>% bsCleanSnpNum.lld2_fsk$V1[.]
+rawSumm.lld2_fsk$commonSnpNum[is.na(rawSumm.lld2_fsk$commonSnpNum)]<-0
+rawSumm.lld2_fsk$rareSnpNum<-rawSumm.lld2_fsk$rawSnpNum-rawSumm.lld2_fsk$commonSnpNum
+
+# 500fg-apk
+rawSumm.500fg_apk<-rawSnpNum.500fg_apk
+colnames(rawSumm.500fg_apk)<-c("rawSnpNum", "SpeciesId")
+rawSumm.500fg_apk$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm.500fg_apk$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm.500fg_apk$MutationRateCore<-rawSumm.500fg_apk$rawSnpNum/rawSumm.500fg_apk$CoreGenomeSize
+rawSumm.500fg_apk$Cohort<-rep('500fg_apk', nrow(rawSumm.500fg_apk))
+rawSumm.500fg_apk$commonSnpNum <- match(rawSumm.500fg_apk$SpeciesId, bsCleanSnpNum.500fg_apk$V2) %>% bsCleanSnpNum.500fg_apk$V1[.]
+rawSumm.500fg_apk$commonSnpNum[is.na(rawSumm.500fg_apk$commonSnpNum)]<-0
+rawSumm.500fg_apk$rareSnpNum<-rawSumm.500fg_apk$rawSnpNum-rawSumm.500fg_apk$commonSnpNum
+
+# 500fg-fsk
+rawSumm.500fg_fsk<-rawSnpNum.500fg_fsk
+colnames(rawSumm.500fg_fsk)<-c("rawSnpNum", "SpeciesId")
+rawSumm.500fg_fsk$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm.500fg_fsk$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm.500fg_fsk$MutationRateCore<-rawSumm.500fg_fsk$rawSnpNum/rawSumm.500fg_fsk$CoreGenomeSize
+rawSumm.500fg_fsk$Cohort<-rep('500fg_fsk', nrow(rawSumm.500fg_fsk))
+rawSumm.500fg_fsk$commonSnpNum <- match(rawSumm.500fg_fsk$SpeciesId, bsCleanSnpNum.500fg_fsk$V2) %>% bsCleanSnpNum.500fg_fsk$V1[.]
+rawSumm.500fg_fsk$commonSnpNum[is.na(rawSumm.500fg_fsk$commonSnpNum)]<-0
+rawSumm.500fg_fsk$rareSnpNum<-rawSumm.500fg_fsk$rawSnpNum-rawSumm.500fg_fsk$commonSnpNum
+
+# 300ob
+rawSumm.300ob<-rawSnpNum.300ob
+colnames(rawSumm.300ob)<-c("rawSnpNum", "SpeciesId")
+rawSumm.300ob$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm.300ob$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm.300ob$MutationRateCore<-rawSumm.300ob$rawSnpNum/rawSumm.300ob$CoreGenomeSize
+rawSumm.300ob$Cohort<-rep('300ob', nrow(rawSumm.300ob))
+rawSumm.300ob$commonSnpNum <- match(rawSumm.300ob$SpeciesId, bsCleanSnpNum.300ob$V2) %>% bsCleanSnpNum.300ob$V1[.]
+rawSumm.300ob$commonSnpNum[is.na(rawSumm.300ob$commonSnpNum)]<-0
+rawSumm.300ob$rareSnpNum<-rawSumm.300ob$rawSnpNum-rawSumm.300ob$commonSnpNum
+
+# ibd
+rawSumm.ibd<-rawSnpNum.ibd
+colnames(rawSumm.ibd)<-c("rawSnpNum", "SpeciesId")
+rawSumm.ibd$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm.ibd$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm.ibd$MutationRateCore<-rawSumm.ibd$rawSnpNum/rawSumm.ibd$CoreGenomeSize
+rawSumm.ibd$Cohort<-rep('ibd', nrow(rawSumm.ibd))
+rawSumm.ibd$commonSnpNum <- match(rawSumm.ibd$SpeciesId, bsCleanSnpNum.ibd$V2) %>% bsCleanSnpNum.ibd$V1[.]
+rawSumm.ibd$commonSnpNum[is.na(rawSumm.ibd$commonSnpNum)]<-0
+rawSumm.ibd$rareSnpNum<-rawSumm.ibd$rawSnpNum-rawSumm.ibd$commonSnpNum
+
+# 300tzfg
+rawSumm.300tzfg<-rawSnpNum.300tzfg
+colnames(rawSumm.300tzfg)<-c("rawSnpNum", "SpeciesId")
+rawSumm.300tzfg$CoreGenomeSize<-rawSpeInfo$`Core Genome Size`[match(rawSumm.300tzfg$SpeciesId, rawSpeInfo$`Species ID`)]
+rawSumm.300tzfg$MutationRateCore<-rawSumm.300tzfg$rawSnpNum/rawSumm.300tzfg$CoreGenomeSize
+rawSumm.300tzfg$Cohort<-rep('300tzfg', nrow(rawSumm.300tzfg))
+rawSumm.300tzfg$commonSnpNum <- match(rawSumm.300tzfg$SpeciesId, bsCleanSnpNum.300tzfg$V2) %>% bsCleanSnpNum.300tzfg$V1[.]
+rawSumm.300tzfg$commonSnpNum[is.na(rawSumm.300tzfg$commonSnpNum)]<-0
+rawSumm.300tzfg$rareSnpNum<-rawSumm.300tzfg$rawSnpNum-rawSumm.300tzfg$commonSnpNum
+
+# all cohorts
+rawSumm.full.long<-rbind(rawSumm, rawSumm.dmp, rawSumm.lld1, rawSumm.lld2_apk,rawSumm.lld2_fsk,rawSumm.500fg_apk, rawSumm.500fg_fsk,rawSumm.300ob, rawSumm.ibd, rawSumm.300tzfg) 
+
+write.table(rawSumm.full.long, "03.genotypeSummary/rawSumm.full.long.tsv",sep = "\t",col.names = T, row.names = F, quote = F)
+
+# Snp number
+rawSnpNum.full<-spread(rawSumm.full.long[,c(2,5,1)], Cohort, c(3)) %>% .[,c("SpeciesId", Cohort_order)]
+colnames(rawSnpNum.full)[2:10]<-paste("CommonSnpN.", colnames(rawSnpNum.full)[2:10],sep = "")
+
+# Common SNP number
+bsCommonSnpNum.full<-spread(rawSumm.full.long[,c(2,5,6)], Cohort, c(3)) %>% .[,c("SpeciesId", Cohort_order)]
+colnames(bsCommonSnpNum.full)[2:10]<-paste("CommonSnpN.", colnames(bsCommonSnpNum.full)[2:10],sep = "")
+
+# mutation rate
+rawMutRateCore.full<-spread(rawSumm.full.long[,c(2,5,4)], Cohort, c(3)) %>% .[,c("SpeciesId", Cohort_order)]
+colnames(rawMutRateCore.full)[2:10]<-paste("SnpRate.", colnames(rawMutRateCore.full)[2:10],sep = "")
+
+rawSumm.full.long$Cohort<-factor(rawSumm.full.long$Cohort, levels = c(Cohort_order))
+
+p_raw_snp_n_spe<-ggplot(rawSumm.full.long, aes(x=Cohort, y=rawSnpNum,color = Cohort,fill = Cohort))+
+  geom_violin()+
+  geom_boxplot(fill = "white",width = 0.2)+
+  xlab(NULL)+
+  ylab("Numbers of SNPs")+
+  scale_x_discrete(limits = Cohort_order,
+                   breaks= Cohort_order,
+                   labels=Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_order,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_order,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+p_raw_snp_rate_spe<-ggplot(rawSumm.full.long, aes(x=Cohort, y=MutationRateCore,color = Cohort,fill = Cohort))+
+  geom_violin()+
+  geom_boxplot(fill = "white",width = 0.2)+
+  xlab(NULL)+
+  ylab("Core-region SNP rate")+
+  scale_x_discrete(limits = Cohort_order,
+                   breaks= Cohort_order,
+                   labels=Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_order,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_order,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Number of common SNPs of each species in each cohort
+p_bs_commone_snp_rate_spe<-ggplot(rawSumm.full.long, aes(x=Cohort, y=commonSnpNum,color = Cohort,fill = Cohort))+
+  geom_violin()+
+  geom_boxplot(fill = "white",width = 0.2)+
+  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of common SNPs")+
+  scale_x_discrete(limits = Cohort_order,
+                   breaks= Cohort_order,
+                   labels=Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_y_log10()+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_order,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_order,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+p_raw_snp_summ<-ggarrange(p_rawSpeN,p_rawSnpN,p_raw_snp_n_spe,p_raw_snp_rate_spe,p_bs_commone_snp_rate_spe,
+                                 # labels = c("A", "B","C", "D", "E"),
+                                 ncol = 1,align = 'hv')
+
+pdf("03.genotypeSummary/rawSnpSumm.pdf", width = 4,height = 10)
+print(p_raw_snp_summ)
+dev.off()
+```
+
+### 2.2 Number of common and rare SNPs
+
+```{r 2.2}
+
+# Number of common and rare SNPs of each species in each cohort
+# dmp
+rawSumm.dmp.long<-gather(rawSumm.dmp[,c(2,6,7)], key = "Type", value = "Number", 2:3)
+rawSumm.dmp.long$SpeciesId<-as.character(rawSumm.dmp.long$SpeciesId)
+rawSumm.dmp.long$Type<-factor(rawSumm.dmp.long$Type, levels = c("rareSnpNum", "commonSnpNum"))
+dmp_sample_order<-rawSumm.dmp.long[rawSumm.dmp.long$Type=="commonSnpNum",] %>% .[order(.$Number,decreasing = T),] %>% .$SpeciesId
+
+p_raw_snp_bar.dmp<-ggplot(rawSumm.dmp.long, aes(x=SpeciesId, y=Number,color = Type,fill = Type))+
+  geom_col()+
+#  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = dmp_sample_order)+
+#  ylim(0,5000)+
+  #  scale_y_log10()+
+  scale_fill_manual(name = NULL,
+                    breaks = c("rareSnpNum", "commonSnpNum"),
+                    labels = c("Rare SNPs", "Common SNPs"),
+                    values = mycolor2_green_blue)+
+  scale_color_manual(name = NULL,
+                     breaks = c("rareSnpNum", "commonSnpNum"),
+                     labels = c("Rare SNPs", "Common SNPs"),
+                     values = mycolor2_green_blue)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+# lld1
+rawSumm.lld1.long<-gather(rawSumm.lld1[,c(2,6,7)], key = "Type", value = "Number", 2:3)
+rawSumm.lld1.long$SpeciesId<-as.character(rawSumm.lld1.long$SpeciesId)
+rawSumm.lld1.long$Type<-factor(rawSumm.lld1.long$Type, levels = c("rareSnpNum", "commonSnpNum"))
+lld1_sample_order<-rawSumm.lld1.long[rawSumm.lld1.long$Type=="commonSnpNum",] %>% .[order(.$Number,decreasing = T),] %>% .$SpeciesId
+
+p_raw_snp_bar.lld1<-ggplot(rawSumm.lld1.long, aes(x=SpeciesId, y=Number,color = Type,fill = Type))+
+  geom_col()+
+  #  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = lld1_sample_order)+
+  #  ylim(0,5000)+
+  #  scale_y_log10()+
+  scale_fill_manual(name = NULL,
+                    breaks = c("rareSnpNum", "commonSnpNum"),
+                    labels = c("Rare SNPs", "Common SNPs"),
+                    values = mycolor2_green_blue)+
+  scale_color_manual(name = NULL,
+                     breaks = c("rareSnpNum", "commonSnpNum"),
+                     labels = c("Rare SNPs", "Common SNPs"),
+                     values = mycolor2_green_blue)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+
+# lld2-apk
+rawSumm.lld2_apk.long<-gather(rawSumm.lld2_apk[,c(2,6,7)], key = "Type", value = "Number", 2:3)
+rawSumm.lld2_apk.long$SpeciesId<-as.character(rawSumm.lld2_apk.long$SpeciesId)
+rawSumm.lld2_apk.long$Type<-factor(rawSumm.lld2_apk.long$Type, levels = c("rareSnpNum", "commonSnpNum"))
+lld2_apk_sample_order<-rawSumm.lld2_apk.long[rawSumm.lld2_apk.long$Type=="commonSnpNum",] %>% .[order(.$Number,decreasing = T),] %>% .$SpeciesId
+
+p_raw_snp_bar.lld2_apk<-ggplot(rawSumm.lld2_apk.long, aes(x=SpeciesId, y=Number,color = Type,fill = Type))+
+  geom_col()+
+  #  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = lld2_apk_sample_order)+
+  #  ylim(0,5000)+
+  #  scale_y_log10()+
+  scale_fill_manual(name = NULL,
+                    breaks = c("rareSnpNum", "commonSnpNum"),
+                    labels = c("Rare SNPs", "Common SNPs"),
+                    values = mycolor2_green_blue)+
+  scale_color_manual(name = NULL,
+                     breaks = c("rareSnpNum", "commonSnpNum"),
+                     labels = c("Rare SNPs", "Common SNPs"),
+                     values = mycolor2_green_blue)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+# lld2-fsk
+rawSumm.lld2_fsk.long<-gather(rawSumm.lld2_fsk[,c(2,6,7)], key = "Type", value = "Number", 2:3)
+rawSumm.lld2_fsk.long$SpeciesId<-as.character(rawSumm.lld2_fsk.long$SpeciesId)
+rawSumm.lld2_fsk.long$Type<-factor(rawSumm.lld2_fsk.long$Type, levels = c("rareSnpNum", "commonSnpNum"))
+lld2_fsk_sample_order<-rawSumm.lld2_fsk.long[rawSumm.lld2_fsk.long$Type=="commonSnpNum",] %>% .[order(.$Number,decreasing = T),] %>% .$SpeciesId
+
+p_raw_snp_bar.lld2_fsk<-ggplot(rawSumm.lld2_fsk.long, aes(x=SpeciesId, y=Number,color = Type,fill = Type))+
+  geom_col()+
+  #  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = lld2_fsk_sample_order)+
+  #  ylim(0,5000)+
+  #  scale_y_log10()+
+  scale_fill_manual(name = NULL,
+                    breaks = c("rareSnpNum", "commonSnpNum"),
+                    labels = c("Rare SNPs", "Common SNPs"),
+                    values = mycolor2_green_blue)+
+  scale_color_manual(name = NULL,
+                     breaks = c("rareSnpNum", "commonSnpNum"),
+                     labels = c("Rare SNPs", "Common SNPs"),
+                     values = mycolor2_green_blue)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+# 500fg-apk
+rawSumm.500fg_apk.long<-gather(rawSumm.500fg_apk[,c(2,6,7)], key = "Type", value = "Number", 2:3)
+rawSumm.500fg_apk.long$SpeciesId<-as.character(rawSumm.500fg_apk.long$SpeciesId)
+rawSumm.500fg_apk.long$Type<-factor(rawSumm.500fg_apk.long$Type, levels = c("rareSnpNum", "commonSnpNum"))
+x500fg_apk_sample_order<-rawSumm.500fg_apk.long[rawSumm.500fg_apk.long$Type=="commonSnpNum",] %>% .[order(.$Number,decreasing = T),] %>% .$SpeciesId
+
+p_raw_snp_bar.500fg_apk<-ggplot(rawSumm.500fg_apk.long, aes(x=SpeciesId, y=Number,color = Type,fill = Type))+
+  geom_col()+
+  #  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = x500fg_apk_sample_order)+
+  #  ylim(0,5000)+
+  #  scale_y_log10()+
+  scale_fill_manual(name = NULL,
+                    breaks = c("rareSnpNum", "commonSnpNum"),
+                    labels = c("Rare SNPs", "Common SNPs"),
+                    values = mycolor2_green_blue)+
+  scale_color_manual(name = NULL,
+                     breaks = c("rareSnpNum", "commonSnpNum"),
+                     labels = c("Rare SNPs", "Common SNPs"),
+                     values = mycolor2_green_blue)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+
+# 500fg-apk
+rawSumm.500fg_fsk.long<-gather(rawSumm.500fg_fsk[,c(2,6,7)], key = "Type", value = "Number", 2:3)
+rawSumm.500fg_fsk.long$SpeciesId<-as.character(rawSumm.500fg_fsk.long$SpeciesId)
+rawSumm.500fg_fsk.long$Type<-factor(rawSumm.500fg_fsk.long$Type, levels = c("rareSnpNum", "commonSnpNum"))
+x500fg_fsk_sample_order<-rawSumm.500fg_fsk.long[rawSumm.500fg_fsk.long$Type=="commonSnpNum",] %>% .[order(.$Number,decreasing = T),] %>% .$SpeciesId
+
+p_raw_snp_bar.500fg_fsk<-ggplot(rawSumm.500fg_fsk.long, aes(x=SpeciesId, y=Number,color = Type,fill = Type))+
+  geom_col()+
+  #  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = x500fg_fsk_sample_order)+
+  #  ylim(0,5000)+
+  #  scale_y_log10()+
+  scale_fill_manual(name = NULL,
+                    breaks = c("rareSnpNum", "commonSnpNum"),
+                    labels = c("Rare SNPs", "Common SNPs"),
+                    values = mycolor2_green_blue)+
+  scale_color_manual(name = NULL,
+                     breaks = c("rareSnpNum", "commonSnpNum"),
+                     labels = c("Rare SNPs", "Common SNPs"),
+                     values = mycolor2_green_blue)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+# 300ob
+rawSumm.300ob.long<-gather(rawSumm.300ob[,c(2,6,7)], key = "Type", value = "Number", 2:3)
+rawSumm.300ob.long$SpeciesId<-as.character(rawSumm.300ob.long$SpeciesId)
+rawSumm.300ob.long$Type<-factor(rawSumm.300ob.long$Type, levels = c("rareSnpNum", "commonSnpNum"))
+x300ob_sample_order<-rawSumm.300ob.long[rawSumm.300ob.long$Type=="commonSnpNum",] %>% .[order(.$Number,decreasing = T),] %>% .$SpeciesId
+
+p_raw_snp_bar.300ob<-ggplot(rawSumm.300ob.long, aes(x=SpeciesId, y=Number,color = Type,fill = Type))+
+  geom_col()+
+  #  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = x300ob_sample_order)+
+  #  ylim(0,5000)+
+  #  scale_y_log10()+
+  scale_fill_manual(name = NULL,
+                    breaks = c("rareSnpNum", "commonSnpNum"),
+                    labels = c("Rare SNPs", "Common SNPs"),
+                    values = mycolor2_green_blue)+
+  scale_color_manual(name = NULL,
+                     breaks = c("rareSnpNum", "commonSnpNum"),
+                     labels = c("Rare SNPs", "Common SNPs"),
+                     values = mycolor2_green_blue)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+
+# ibd
+rawSumm.ibd.long<-gather(rawSumm.ibd[,c(2,6,7)], key = "Type", value = "Number", 2:3)
+rawSumm.ibd.long$SpeciesId<-as.character(rawSumm.ibd.long$SpeciesId)
+rawSumm.ibd.long$Type<-factor(rawSumm.ibd.long$Type, levels = c("rareSnpNum", "commonSnpNum"))
+ibd_sample_order<-rawSumm.ibd.long[rawSumm.ibd.long$Type=="commonSnpNum",] %>% .[order(.$Number,decreasing = T),] %>% .$SpeciesId
+
+p_raw_snp_bar.ibd<-ggplot(rawSumm.ibd.long, aes(x=SpeciesId, y=Number,color = Type,fill = Type))+
+  geom_col()+
+  #  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = ibd_sample_order)+
+  #  ylim(0,5000)+
+  #  scale_y_log10()+
+  scale_fill_manual(name = NULL,
+                    breaks = c("rareSnpNum", "commonSnpNum"),
+                    labels = c("Rare SNPs", "Common SNPs"),
+                    values = mycolor2_green_blue)+
+  scale_color_manual(name = NULL,
+                     breaks = c("rareSnpNum", "commonSnpNum"),
+                     labels = c("Rare SNPs", "Common SNPs"),
+                     values = mycolor2_green_blue)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+
+# 300tzfg
+rawSumm.300tzfg.long<-gather(rawSumm.300tzfg[,c(2,6,7)], key = "Type", value = "Number", 2:3)
+rawSumm.300tzfg.long$SpeciesId<-as.character(rawSumm.300tzfg.long$SpeciesId)
+rawSumm.300tzfg.long$Type<-factor(rawSumm.300tzfg.long$Type, levels = c("rareSnpNum", "commonSnpNum"))
+x300tzfg_sample_order<-rawSumm.300tzfg.long[rawSumm.300tzfg.long$Type=="commonSnpNum",] %>% .[order(.$Number,decreasing = T),] %>% .$SpeciesId
+
+p_raw_snp_bar.300tzfg<-ggplot(rawSumm.300tzfg.long, aes(x=SpeciesId, y=Number,color = Type,fill = Type))+
+  geom_col()+
+  #  geom_hline(yintercept=1000, linetype="dashed", color = "black")+
+  xlab(NULL)+
+  ylab("Number of SNPs")+
+  scale_x_discrete(limits = x300tzfg_sample_order)+
+  #  ylim(0,5000)+
+  #  scale_y_log10()+
+  scale_fill_manual(name = NULL,
+                    breaks = c("rareSnpNum", "commonSnpNum"),
+                    labels = c("Rare SNPs", "Common SNPs"),
+                    values = mycolor2_green_blue)+
+  scale_color_manual(name = NULL,
+                     breaks = c("rareSnpNum", "commonSnpNum"),
+                     labels = c("Rare SNPs", "Common SNPs"),
+                     values = mycolor2_green_blue)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+p_common_rare_snp_bar<-ggarrange(p_raw_snp_bar.dmp,
+                                 p_raw_snp_bar.lld1,
+                                 p_raw_snp_bar.lld2_apk,
+                                 p_raw_snp_bar.lld2_fsk,
+                                 p_raw_snp_bar.500fg_apk,
+                                 p_raw_snp_bar.500fg_fsk,
+                                 p_raw_snp_bar.300ob,
+                                 p_raw_snp_bar.ibd,
+                                 p_raw_snp_bar.300tzfg,
+                             labels = Cohort_label,
+                             ncol = 1,align = 'hv')
+
+pdf("03.genotypeSummary/common_rare_snp_barplot.pdf", width = 12,height = 16)
+print(p_common_rare_snp_bar)
+dev.off()
+```
+
+## 3 Clean genotypes
+
+### 3.1 Summary clean genotypes
+
+```{r 3.1}
+# Number of species detected with SNPs in each cohort
+cleanSpeNum.df<-data.frame(Cohort = Cohort_label,
+                         CleanSpeN = c(nrow(cleanSnpNum),
+                                      nrow(cleanSnpNum.dmp),
+                                      nrow(cleanSnpNum.lld1),
+                                      nrow(cleanSnpNum.lld2_apk),
+                                      nrow(cleanSnpNum.lld2_fsk),
+                                      nrow(cleanSnpNum.500fg_apk),
+                                      nrow(cleanSnpNum.500fg_fsk),
+                                      nrow(cleanSnpNum.300ob),
+                                      nrow(cleanSnpNum.ibd),
+                                      nrow(cleanSnpNum.300tzfg)))
+cleanSpeNum.df$Cohort<-factor(cleanSpeNum.df$Cohort, levels = Cohort_label)
+
+if(!dir.exists("03.genotypeSummary")){dir.create("03.genotypeSummary")}
+
+p_cleanSpeN<-ggplot(cleanSpeNum.df, aes(x=Cohort, y=CleanSpeN,color = Cohort,fill = Cohort))+
+  geom_col()+
+  xlab(NULL)+
+  ylab("Number of species")+
+  scale_x_discrete(limits = Cohort_label,
+                   breaks = Cohort_label,
+                   labels = Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_label,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_label,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+#### v2 start
+p_cleanSpeN.v2 <- cleanSpeNum.df %>%
+  dplyr::filter(Cohort %in% cohort_label.v2) %>%
+  ggplot(aes(x=Cohort, y=CleanSpeN,color = Cohort,fill = Cohort))+
+  geom_col()+
+  xlab(NULL)+
+  ylab("Number of species")+
+  scale_x_discrete(limits = cohort_label.v2,
+                   breaks = cohort_label.v2,
+                   labels = cohort_title_label.v2)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = cohort_label.v2,
+                     labels = cohort_title_label.v2,
+                     values = cohort_color.v2)+
+  scale_fill_manual(name=NULL, 
+                    breaks = cohort_label.v2,
+                    labels = cohort_title_label.v2,
+                    values = cohort_color.v2)+
+  theme_classic() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+#### v2 end
+
+# Total number of clean SNPs in each cohort
+cleanSnpNum.df<-data.frame(Cohort = Cohort_label,
+                         CleanSnpN = c(sum(cleanSnpNum$V1),
+                                      sum(cleanSnpNum.dmp$V1),
+                                      sum(cleanSnpNum.lld1$V1),
+                                      sum(cleanSnpNum.lld2_apk$V1),
+                                      sum(cleanSnpNum.lld2_fsk$V1),
+                                      sum(cleanSnpNum.500fg_apk$V1),
+                                      sum(cleanSnpNum.500fg_fsk$V1),
+                                      sum(cleanSnpNum.300ob$V1),
+                                      sum(cleanSnpNum.ibd$V1),
+                                      sum(cleanSnpNum.300tzfg$V1)
+                                      ))
+cleanSnpNum.df$Cohort<-factor(cleanSnpNum.df$Cohort, levels = Cohort_label)
+
+p_cleanSnpN<-ggplot(cleanSnpNum.df, aes(x=Cohort, y=CleanSnpN,color = Cohort,fill = Cohort))+
+  geom_col()+
+  xlab(NULL)+
+  scale_x_discrete(limits = Cohort_label,
+                   breaks = Cohort_label,
+                   labels = Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_label,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_label,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+## v2 start
+p_cleanSnpN.v2 <- cleanSnpNum.df %>%
+  dplyr::filter(Cohort %in% cohort_label.v2) %>%
+  ggplot(aes(x=Cohort, y=CleanSnpN,color = Cohort,fill = Cohort))+
+  geom_col()+
+  xlab(NULL)+
+  scale_x_discrete(limits = cohort_label.v2,
+                   breaks = cohort_label.v2,
+                   labels = cohort_title_label.v2)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = cohort_label.v2,
+                     labels = cohort_title_label.v2,
+                     values = cohort_color.v2)+
+  scale_fill_manual(name=NULL, 
+                    breaks = cohort_label.v2,
+                    labels = cohort_title_label.v2,
+                    values = cohort_color.v2)+
+  theme_classic() + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+## v2 end
+
+# all
+cleanSumm<-cleanSnpNum
+colnames(cleanSumm)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm$SpeciesId, speInfo$`Species ID`)]
+cleanSumm$CleanedMutationRateCore<-cleanSumm$CleanedSnpNum/cleanSumm$CoreGenomeSize
+cleanSumm$Cohort<-rep('all', nrow(cleanSumm))
+
+# dmp
+cleanSumm.dmp<-cleanSnpNum.dmp
+colnames(cleanSumm.dmp)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm.dmp$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm.dmp$SpeciesId, speInfo$`Species ID`)]
+cleanSumm.dmp$CleanedMutationRateCore<-cleanSumm.dmp$CleanedSnpNum/cleanSumm.dmp$CoreGenomeSize
+cleanSumm.dmp$Cohort<-rep('dmp', nrow(cleanSumm.dmp))
+
+# lld1
+cleanSumm.lld1<-cleanSnpNum.lld1
+colnames(cleanSumm.lld1)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm.lld1$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm.lld1$SpeciesId, speInfo$`Species ID`)]
+cleanSumm.lld1$CleanedMutationRateCore<-cleanSumm.lld1$CleanedSnpNum/cleanSumm.lld1$CoreGenomeSize
+cleanSumm.lld1$Cohort<-rep('lld1', nrow(cleanSumm.lld1))
+
+# lld2-apk
+cleanSumm.lld2_apk<-cleanSnpNum.lld2_apk
+colnames(cleanSumm.lld2_apk)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm.lld2_apk$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm.lld2_apk$SpeciesId, speInfo$`Species ID`)]
+cleanSumm.lld2_apk$CleanedMutationRateCore<-cleanSumm.lld2_apk$CleanedSnpNum/cleanSumm.lld2_apk$CoreGenomeSize
+cleanSumm.lld2_apk$Cohort<-rep('lld2_apk', nrow(cleanSumm.lld2_apk))
+
+# lld2-fsk
+cleanSumm.lld2_fsk<-cleanSnpNum.lld2_fsk
+colnames(cleanSumm.lld2_fsk)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm.lld2_fsk$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm.lld2_fsk$SpeciesId, speInfo$`Species ID`)]
+cleanSumm.lld2_fsk$CleanedMutationRateCore<-cleanSumm.lld2_fsk$CleanedSnpNum/cleanSumm.lld2_fsk$CoreGenomeSize
+cleanSumm.lld2_fsk$Cohort<-rep('lld2_fsk', nrow(cleanSumm.lld2_fsk))
+
+
+# 500fg_apk
+cleanSumm.500fg_apk<-cleanSnpNum.500fg_apk
+colnames(cleanSumm.500fg_apk)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm.500fg_apk$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm.500fg_apk$SpeciesId, speInfo$`Species ID`)]
+cleanSumm.500fg_apk$CleanedMutationRateCore<-cleanSumm.500fg_apk$CleanedSnpNum/cleanSumm.500fg_apk$CoreGenomeSize
+cleanSumm.500fg_apk$Cohort<-rep('500fg_apk', nrow(cleanSumm.500fg_apk))
+
+# 500fg_fsk
+cleanSumm.500fg_fsk<-cleanSnpNum.500fg_fsk
+colnames(cleanSumm.500fg_fsk)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm.500fg_fsk$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm.500fg_fsk$SpeciesId, speInfo$`Species ID`)]
+cleanSumm.500fg_fsk$CleanedMutationRateCore<-cleanSumm.500fg_fsk$CleanedSnpNum/cleanSumm.500fg_fsk$CoreGenomeSize
+cleanSumm.500fg_fsk$Cohort<-rep('500fg_fsk', nrow(cleanSumm.500fg_fsk))
+
+
+# 300ob
+cleanSumm.300ob<-cleanSnpNum.300ob
+colnames(cleanSumm.300ob)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm.300ob$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm.300ob$SpeciesId, speInfo$`Species ID`)]
+cleanSumm.300ob$CleanedMutationRateCore<-cleanSumm.300ob$CleanedSnpNum/cleanSumm.300ob$CoreGenomeSize
+cleanSumm.300ob$Cohort<-rep('300ob', nrow(cleanSumm.300ob))
+
+# ibd
+cleanSumm.ibd<-cleanSnpNum.ibd
+colnames(cleanSumm.ibd)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm.ibd$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm.ibd$SpeciesId, speInfo$`Species ID`)]
+cleanSumm.ibd$CleanedMutationRateCore<-cleanSumm.ibd$CleanedSnpNum/cleanSumm.ibd$CoreGenomeSize
+cleanSumm.ibd$Cohort<-rep('ibd', nrow(cleanSumm.ibd))
+
+# 300tzfg
+cleanSumm.300tzfg<-cleanSnpNum.300tzfg
+colnames(cleanSumm.300tzfg)<-c("CleanedSnpNum", "SpeciesId")
+cleanSumm.300tzfg$CoreGenomeSize<-speInfo$`Core Genome Size`[match(cleanSumm.300tzfg$SpeciesId, speInfo$`Species ID`)]
+cleanSumm.300tzfg$CleanedMutationRateCore<-cleanSumm.300tzfg$CleanedSnpNum/cleanSumm.300tzfg$CoreGenomeSize
+cleanSumm.300tzfg$Cohort<-rep('300tzfg', nrow(cleanSumm.300tzfg))
+
+# all cohorts
+cleanSumm.full.long<-rbind(cleanSumm, cleanSumm.dmp, cleanSumm.lld1, cleanSumm.lld2_apk, cleanSumm.lld2_fsk,
+                           cleanSumm.500fg_apk, cleanSumm.500fg_fsk,cleanSumm.300ob,cleanSumm.ibd, cleanSumm.300tzfg) 
+
+write.table(cleanSumm.full.long, "03.genotypeSummary/cleanSumm.full.long.tsv",sep = "\t",col.names = T, row.names = F, quote = F)
+
+## Species list per cohort
+speciesCohort <- cleanSumm.full.long %>% dplyr::filter(Cohort != "all") %>% dplyr::select(SpeciesId, Cohort)
+
+if(!dir.exists("01.cleanData/speInfo")){dir.create("01.cleanData/speInfo")}
+write.table(speciesCohort, "01.cleanData/speInfo/speciesCohort.tsv", sep = "\t", row.names = F, col.names = F, quote = F)
+ 
+# Snp number
+cleanSnpNum.full<-spread(cleanSumm.full.long[,c(2,5,1)], Cohort, c(3)) %>% .[,c("SpeciesId", Cohort_order)]
+colnames(cleanSnpNum.full)[2:11]<-paste("CommonSnpN.", colnames(cleanSnpNum.full)[2:11],sep = "")
+
+# mutation rate
+cleanMutRateCore.full<-spread(cleanSumm.full.long[,c(2,5,4)], Cohort, c(3)) %>% .[,c("SpeciesId", Cohort_order)]
+colnames(cleanMutRateCore.full)[2:11]<-paste("CommonSnpRate.", colnames(cleanMutRateCore.full)[2:11],sep = "")
+
+# combine species information and summary
+cleanSnpInfo<-match(cleanSnpNum.full$SpeciesId, cleanMutRateCore.full$SpeciesId) %>% cleanMutRateCore.full[.,] %>% cbind(cleanSnpNum.full,.)
+cleanSnpInfo<-cleanSnpInfo[,-12]
+speInfoSumm<-match(speInfo$`Species ID`, cleanSnpInfo$SpeciesId) %>% cleanSnpInfo[.,] %>% cbind(speInfo, .)
+
+speInfoSumm$AvailableCohortNumber<-rowSums(!is.na(speInfoSumm[,c(34:39)]) )
+
+speInfoSumm$AvailableCohort<-NA
+for (i in 1:nrow(speInfoSumm)) {
+#  i<-1
+  speCohort<-cleanSumm.full.long[cleanSumm.full.long$SpeciesId == speInfoSumm$`Species ID`[i], 5] %>% .[-grep("all",.)]
+  speInfoSumm$AvailableCohort[i]<-paste(speCohort, collapse = ";")
+}
+
+## Add extra information
+#speInfoSumm <- left_join(speInfoSumm, speSampleSize, by = c("Species ID" = "SpeciesId"))
+#speInfoSumm <- left_join(speInfoSumm, ld_summ.wide,  by = c("Species ID" = "SpeciesId"))
+
+write.table(speInfoSumm, "03.genotypeSummary/speInfoSumm.tsv",sep = "\t",col.names = T, row.names = F, quote = F)
+# 
+# pdf("03.genotypeSummary/LD_sampleSize_snpN.pdf",width = 7, height = 6.5)
+# ggplot(speInfoSumm,aes(LD.Mean, Linked.SNP.distance.Mean, label = ifelse(Linked.SNP.distance.Mean < 1500000 & LD.Mean < 0.2, "" , `Species ID`)))+
+#   geom_point(aes(size = All, color = CommonSnpN.All), alpha = 0.5) +
+#   geom_text_repel(min.segment.length = 0, seed = 42)+
+#   scale_color_gradientn(colours = wes_palette("Zissou1", 100, type = "continuous"))+
+#   xlab("Mean LD") +
+#   ylab("Mean distance between linked SNPs")+
+#   theme_linedraw()
+# dev.off()
+```
+
+### 3.2 Per cohort
+
+```{r 3.2}
+cleanSumm.full.long$Cohort<-factor(cleanSumm.full.long$Cohort, levels = Cohort_order)
+
+p_snp_n_spe<-ggplot(cleanSumm.full.long, aes(x=Cohort, y=CleanedSnpNum,color = Cohort,fill = Cohort))+
+  geom_violin()+
+  geom_boxplot(fill = "white",width = 0.2)+
+  xlab(NULL)+
+  ylab("Numbers of common SNVs")+
+  scale_x_discrete(limits = cleanSnpNum$Cohort,
+                   breaks=Cohort_order,
+                   labels=Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_order,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_order,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+## v2 start
+p_snp_n_spe.v2 <- cleanSumm.full.long %>%
+  dplyr::filter(Cohort %in% cohort_order.v2) %>%
+  ggplot(aes(x=Cohort, y=CleanedSnpNum,color = Cohort,fill = Cohort))+
+  geom_violin()+
+  geom_boxplot(fill = "white",width = 0.2)+
+  xlab(NULL)+
+  ylab("Numbers of common SNVs")+
+  scale_x_discrete(limits = cohort_order.v2,
+                   breaks = cohort_order.v2,
+                   labels = cohort_title_label.v2)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = cohort_order.v2,
+                     labels = cohort_title_label.v2,
+                     values = cohort_color.v2)+
+  scale_fill_manual(name=NULL, 
+                    breaks = cohort_order.v2,
+                    labels = cohort_title_label.v2,
+                    values = cohort_color.v2)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+## v2 end
+
+p_snp_rate_spe<-ggplot(cleanSumm.full.long, aes(x=Cohort, y=CleanedMutationRateCore,color = Cohort,fill = Cohort))+
+  geom_violin()+
+  geom_boxplot(fill = "white",width = 0.2)+
+  xlab(NULL)+
+  ylab("Core-region common SNV rate")+
+  scale_x_discrete(limits = cleanSnpNum$Cohort,
+                   breaks=Cohort_order,
+                   labels=Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_order,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_order,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+## v2 start
+p_snp_rate_spe.v2 <- cleanSumm.full.long %>%
+  dplyr::filter(Cohort %in% cohort_order.v2) %>%
+  ggplot(aes(x=Cohort, y=CleanedMutationRateCore,color = Cohort,fill = Cohort))+
+  geom_violin()+
+  geom_boxplot(fill = "white",width = 0.2)+
+  xlab(NULL)+
+  ylab("Core-region common SNV rate")+
+  scale_x_discrete(limits = cleanSnpNum$Cohort,
+                   breaks=Cohort_order,
+                   labels=Cohort_label)+
+  scale_y_continuous(expand = c(0,0))+
+  scale_color_manual(name=NULL, 
+                     breaks = Cohort_order,
+                     labels = Cohort_label,
+                     values = Cohort_color)+
+  scale_fill_manual(name=NULL, 
+                    breaks = Cohort_order,
+                    labels = Cohort_label,
+                    values = Cohort_color)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+## v2 end
+
+p_clean_snp_summ<-ggarrange(p_cleanSpeN,p_cleanSnpN,p_snp_n_spe,p_snp_rate_spe,
+                                 labels = c("A", "B","C", "D"),
+                                 ncol = 1,align = 'hv')
+
+pdf("03.genotypeSummary/cleanSnpSumm.pdf", width = 4,height = 8)
+print(p_clean_snp_summ)
+dev.off()
+
+## v2 start
+p_clean_snp_summ.v2<-ggarrange(p_cleanSpeN.v2, p_cleanSnpN.v2, p_snp_n_spe.v2, p_snp_rate_spe.v2,
+                                # labels = c("A", "B","C", "D"),
+                                 ncol = 1,align = 'hv')
+
+pdf("03.genotypeSummary/cleanSnpSumm.v2.pdf", width = 4,height = 8)
+print(p_clean_snp_summ.v2)
+dev.off()
+## v2 end
+```
+
+### 3.3 Species intersection
+
+```{r 3.3, eval=FALSE}
+speInfoSumm1<-speInfoSumm
+colnames(speInfoSumm1)[34:42]<-cohort_label
+cohortList<-colnames(speInfoSumm1)[34:42]
+speInfoSumm1[cohortList] = !is.na(speInfoSumm1[cohortList])
+
+pdf("03.genotypeSummary/speciesIntersection.upset.pdf",width = 50,height = 7)
+upset(speInfoSumm1, rev(cohortList), name='Cohorts', width_ratio=0.15,
+      mode='inclusive_intersection',
+      sort_sets=FALSE,
+      intersections='all',
+      min_degree = 2,max_degree=6,
+      base_annotations=list(
+        'Intersection size'=intersection_size(
+          counts=F,mode='inclusive_intersection',
+          mapping=aes(fill=Phylum)
+        )+
+          scale_fill_manual(values = wes_palette("Darjeeling1", 11, type = "continuous"))
+      )
+#      base_annotations=list('Size'=(intersection_size(counts=T, mode='inclusive_intersection'))),
+
+)
+dev.off()
+```
+
+### 3.4 Common SNP intersection
+
+```{r 3.4, eval=FALSE}
+cleanSnp$DMP     <- cleanSnp$V1 %in% cleanSnp.dmp$V1
+cleanSnp$LLD1    <- cleanSnp$V1 %in% cleanSnp.lld1$V1
+cleanSnp$LLD2    <- cleanSnp$V1 %in% cleanSnp.lld2$V1
+cleanSnp$`300OB` <- cleanSnp$V1 %in% cleanSnp.300ob$V1
+cleanSnp$`500FG` <- cleanSnp$V1 %in% cleanSnp.500fg$V1
+cleanSnp$IBD     <- cleanSnp$V1 %in% cleanSnp.ibd$V1
+
+cleanSnp$`Species ID` <- str_replace_all(cleanSnp$V1, "_.*", "")
+cleanSnp$Phlym<-match(cleanSnp$`Species ID`, speInfo$`Species ID`) %>% speInfo$Phylum[.]
+
+cleanSnpAvaiCohortNum<-rowSums(cleanSnp[,2:7]) %>% table %>% as.data.frame
+
+colnames(cleanSnpAvaiCohortNum)<-c("AvaiCohortN", "CleanSnpN")
+pdf("03.genotypeSummary/commonSnpAvaiCohortN.pdf",width = 3, height = 3)
+ggplot(cleanSnpAvaiCohortNum, aes(x=AvaiCohortN, y=CleanSnpN,color = AvaiCohortN,fill = AvaiCohortN))+
+  geom_col()+
+  xlab("Available cohort number")+
+  ylab("Number of common SNPs")+
+  scale_y_continuous(expand = c(0,0))+
+  scale_fill_npg()+
+  scale_color_npg()+
+  theme_classic()+
+  theme(legend.position = "none")
+dev.off()
+
+cohortList<-c("DMP", "LLD1", "LLD2", "300OB", "500FG", "IBD")
+
+pdf("03.genotypeSummary/commonSnpIntersection.upset.pdf",width = 12,height = 4)
+upset(cleanSnp, rev(cohortList), name='Cohorts', width_ratio=0.15,
+      mode='inclusive_intersection',
+      sort_sets=FALSE,
+      intersections='all',
+      min_degree = 2,max_degree=6,
+      base_annotations=list(
+        'Intersection size'=intersection_size(
+          counts=F,mode='inclusive_intersection',
+          mapping=aes(fill=Phylum)
+        )+
+          scale_fill_manual(values = wes_palette("Darjeeling1", 9, type = "continuous"))
+      )
+      #      base_annotations=list('Size'=(intersection_size(counts=T, mode='inclusive_intersection'))),
+      
+)
+dev.off()
+```
+
+## 4 Summary dataset
+
+```{r 4}
+sampleCohorts$Individual<-sampleCohorts$V1 %>% str_replace_all("_APK|_FSK|_F_.*", "")
+# unique(sampleCohorts$Individual[grep("500fg", sampleCohorts$V2)])%>%length # Count individual number
+```
+
+## 5 SNP impact annotation
+
+```{r 5}
+# General setting
+annotationType <- c("stop_gained","start_lost","stop_lost&splice_region_variant",
+                    "missense_variant", "splice_region_variant&stop_retained_variant", "start_retained_variant","initiator_codon_variant",
+                    "upstream_gene_variant", "downstream_gene_variant", "synonymous_variant")
+annotationLevel <- c("High", "High", "High",
+                   "Moderate", "Moderate","Moderate","Moderate",
+                   "Low","Low","Low")
+annotationCol <- c("#E64B35", "#E64B35", "#E64B35",
+                   "#00A087", "#00A087","#00A087","#00A087",
+                   "#3C5488","#3C5488","#3C5488") 
+
+# Clean annotation table
+snpAnno.df <- snpAnno
+colnames(snpAnno.df) <- c("SNP_ID", "Gene_ID", "Impact", "Annotation")
+snpAnno.df$Species <- snpAnno.df$SNP_ID %>% str_replace_all("_.*", "")
+
+snpAnno.summ.wide <- table(snpAnno.df$Species, snpAnno.df$Impact) %>% as.data.frame() %>% pivot_wider(names_from = Var2, values_from = Freq)
+snpAnno.summ.wide <- cbind(snpAnno.summ.wide,snpAnno.summ.wide[,-1]/rowSums(snpAnno.summ.wide[,-1]))
+colnames(snpAnno.summ.wide)[12:21] <- paste(colnames(snpAnno.summ.wide)[12:21], ".Prop", sep = "")
+snpAnno.summ.wide$HighImpactProp     <- snpAnno.summ.wide$stop_gained.Prop + snpAnno.summ.wide$start_lost.Prop +
+  snpAnno.summ.wide$`stop_lost&splice_region_variant.Prop`
+snpAnno.summ.wide$ModerateImpactProp <- snpAnno.summ.wide$missense_variant.Prop +
+  snpAnno.summ.wide$`splice_region_variant&stop_retained_variant.Prop` + snpAnno.summ.wide$start_retained_variant.Prop +
+  snpAnno.summ.wide$initiator_codon_variant.Prop
+snpAnno.summ.wide$LowImpactProp      <- snpAnno.summ.wide$upstream_gene_variant.Prop + snpAnno.summ.wide$downstream_gene_variant.Prop +
+  snpAnno.summ.wide$synonymous_variant.Prop
+
+snpAnno.summ.wide <- cbind(snpAnno.summ.wide$Var1 %>% match(speInfo$`Species ID`) %>% speInfo[.,23:31], snpAnno.summ.wide)
+write.table(snpAnno.summ.wide, "03.genotypeSummary/snpAnno.summ.wide.tsv",sep = "\t",col.names = T, row.names = F, quote = F)
+
+snpAnno.summ.wide.impact.long <- snpAnno.summ.wide[,c(10,21:30)] %>% pivot_longer(2:11, names_to = "Impact", values_to = "Proportion")
+snpAnno.summ.wide.impact.long$Impact <- snpAnno.summ.wide.impact.long$Impact %>% str_replace_all(".Prop", "")
+snpAnno.summ.wide.impact.long$Impact <- factor(snpAnno.summ.wide.impact.long$Impact, levels = annotationType)
+
+spe_order<-snpAnno.summ.wide$Var1[order(snpAnno.summ.wide$LowImpactProp, decreasing = T)]
+
+impact_color<-c(pal_material("red")(6)[c(5,3,1)],                  # High
+                pal_material("light-green")(6)[c(5,3,2,1)],         # Moderate
+                pal_material("blue")(6)[c(5,3,1)])   # Low
+
+p_impact <- ggplot(snpAnno.summ.wide.impact.long, aes(x=Var1, y=Proportion, group = Impact, fill = Impact))+
+  geom_bar(width = 1,position = "stack",stat="identity")+
+  scale_x_discrete(limits = spe_order)+
+  scale_y_continuous(expand = c(0,0)) +
+  ylab("Proportion")+
+  scale_fill_manual(name = 'Impact',
+                    breaks = annotationType,
+                    values = impact_color)+
+  theme_bw()+
+  theme(legend.position = "right",
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 10),
+        plot.subtitle = element_text(vjust = 1), 
+        plot.caption = element_text(vjust = 1), 
+        axis.line = element_line(colour = 'white'), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.border = element_blank(),
+        axis.line.x = element_line(colour = 'white'),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+pdf("03.genotypeSummary/SNP_impact_level_prop_barplot.pdf", width = 14,height = 3)
+print(p_impact)
+dev.off()
+
+
+snpAnno.summ<-table(snpAnno$V3) %>% as.data.frame()
+snpAnno.summ$ImpactLevel <- snpAnno.summ$Var1 %>% match(annotationType) %>% annotationLevel[.]
+snpAnno$ImpactLevel <- snpAnno$V3 %>% match(annotationType) %>% annotationLevel[.]
+
+pdf("03.genotypeSummary/All.SNP.annotation.pie.pdf")
+ggnestedpie(data = snpAnno, group_key = c("ImpactLevel", "V3"), count_type = "full",
+            outer_fill_color = c("#E64B35","#3C5488", "#00A087"), border_size = 0,
+            outer_label_type = "horizon", outer_label_info = "all",outer_label_pos = "out",
+            inner_label = F)
+dev.off()
+```
+
+## 6 Gene annotation
+
+```{r 6}
+geneAnno.df <- matrix(NA, nrow = nrow(geneAnno.raw), ncol = 10) %>% as.data.frame()
+colnames(geneAnno.df) <- c("ID", "EC_number", "Name", "COG", "Gene", 
+                           "UniProtKB", "Motif", "IS", "Locus_tag", "Product")
+geneAnno.df_ID        <- geneAnno.df$ID
+geneAnno.df_EC_number <- geneAnno.df$EC_number
+geneAnno.df_Name      <- geneAnno.df$Name
+geneAnno.df_COG       <- geneAnno.df$COG
+geneAnno.df_Gene      <- geneAnno.df$Gene
+geneAnno.df_UniProtKB <-  geneAnno.df$UniProtKB
+geneAnno.df_Motif     <- geneAnno.df$Motif
+geneAnno.df_IS        <- geneAnno.df$IS
+geneAnno.df_Locus_tag <- geneAnno.df$Locus_tag
+geneAnno.df_Product   <- geneAnno.df$Product
+
+for (i in 1:nrow(geneAnno.raw)) {
+#  i <- 846
+  geneAnno.raw_i <- geneAnno.raw$V9[i] %>% str_split(";") %>% unlist
+  
+  if(sum(str_detect(geneAnno.raw_i, "ID=")) > 0){
+    geneAnno.df_ID[i]             <- str_detect(geneAnno.raw_i, "ID=")        %>% geneAnno.raw_i[.] %>% str_replace_all("ID=", "")
+  }
+  if(sum(str_detect(geneAnno.raw_i, "eC_number=")) > 0){
+    geneAnno.df_EC_number[i]  <- str_detect(geneAnno.raw_i, "eC_number=") %>% geneAnno.raw_i[.] %>% str_replace_all("eC_number=", "")
+  }
+  if(sum(str_detect(geneAnno.raw_i, "Name=")) > 0){
+    geneAnno.df_Name[i]       <- str_detect(geneAnno.raw_i, "Name=")      %>% geneAnno.raw_i[.] %>% str_replace_all("Name=", "")
+  }
+  if(sum(str_detect(geneAnno.raw_i, "db_xref=")) > 0){
+    geneAnno.df_COG[i]        <- str_detect(geneAnno.raw_i, "db_xref=")   %>% geneAnno.raw_i[.] %>% str_replace_all("db_xref=COG:", "")
+  }
+  if(sum(str_detect(geneAnno.raw_i, "gene=")) > 0){
+    geneAnno.df_Gene[i]       <- str_detect(geneAnno.raw_i, "gene=")      %>% geneAnno.raw_i[.] %>% str_replace_all("gene=", "")
+  }
+  if(sum(str_detect(geneAnno.raw_i, "inference=")) > 0){
+    geneAnno.df_UniProtKB[i]      <- str_detect(geneAnno.raw_i, "inference=") %>% geneAnno.raw_i[.] %>% str_replace_all(".*UniProtKB:", "") %>% str_replace_all("inference=.*", "")
+  }
+  if(sum(str_detect(geneAnno.raw_i, "inference=")) > 0){
+    geneAnno.df_Motif[i]          <- str_detect(geneAnno.raw_i, "inference=") %>% geneAnno.raw_i[.] %>% str_replace_all(".*protein motif:HAMAP:", "") %>% str_replace_all("inference=.*", "")
+  }
+  if(sum(str_detect(geneAnno.raw_i, "inference=")) > 0){
+    geneAnno.df_IS[i]             <- str_detect(geneAnno.raw_i, "inference=") %>% geneAnno.raw_i[.] %>% str_replace_all(".*:ISfinder:", "") %>% str_replace_all("inference=.*", "")
+  }
+  if(sum(str_detect(geneAnno.raw_i, "locus_tag=")) > 0){
+    geneAnno.df_Locus_tag[i]  <- str_detect(geneAnno.raw_i, "locus_tag=") %>% geneAnno.raw_i[.] %>% str_replace_all("locus_tag=", "")
+  }
+  if(sum(str_detect(geneAnno.raw_i, "product=")) > 0){
+    geneAnno.df_Product[i]        <- str_detect(geneAnno.raw_i, "product=")   %>% geneAnno.raw_i[.] %>% str_replace_all("product=", "")
+  }
+ 
+  progress(i, nrow(geneAnno.raw))
+}
+
+
+geneAnno.df$ID        <- geneAnno.df_ID
+geneAnno.df$EC_number <- geneAnno.df_EC_number
+geneAnno.df$Name      <- geneAnno.df_Name
+geneAnno.df$COG       <- geneAnno.df_COG
+geneAnno.df$Gene      <- geneAnno.df_Gene
+geneAnno.df$UniProtKB <- geneAnno.df_UniProtKB 
+geneAnno.df$Motif     <- geneAnno.df_Motif
+geneAnno.df$IS        <- geneAnno.df_IS
+geneAnno.df$Locus_tag <- geneAnno.df_Locus_tag
+geneAnno.df$Product   <- geneAnno.df_Product
+
+if(!dir.exists("01.cleanData/annotation")){dir.create("01.cleanData/annotation")}
+write.table(geneAnno.df, "01.cleanData/annotation/geneAnno.df.tsv",sep = "\t",col.names = T, row.names = F, quote = F)
+saveRDS(geneAnno.df, file = "01.cleanData/annotation/geneAnno.df.rds")
+```

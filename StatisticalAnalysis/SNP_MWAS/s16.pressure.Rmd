@@ -1,0 +1,244 @@
+---
+title: "Selective pressure analysis"
+author: "Daoming Wang"
+date: "2024/06/11"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+pNpS.assoc.long <- fread("00.rawData/pressure/assoc.read.pNpS.rmNA.tsv",sep = "\t")
+pNpS.102274.long <- fread("00.rawData/pressure/102274.read.pNpS.tsv",sep = " ")
+mediation.sig <- read.table("14.mediationAnalysis/snp_mediation.sig.full.tsv", sep = "\t", header = T)
+
+geneAbun <- read.table("00.rawData/geneAbun/1979genes.shortbred.txt", sep = "\t", header = T, row.names = "Family")
+sampleCohorts<-read.table("00.rawData/cohortList/sampleCohorts.tsv",header = F)
+phenInfo<-read.table("02.phenotype_summary/phenInfoSumm.tsv", sep = "\t",header = T, check.names = F)
+load("01.cleanData/phenotype/full_phen.RData")
+geneAnno <- readRDS("01.cleanData/annotation/geneAnno.df.rds")
+```
+
+### 1.3 Prepare
+
+```{r 1.3, eval=FALSE}
+if (!dir.exists("16.pressure")) {dir.create("16.pressure")}
+```
+
+### 1.4 Clean tables
+
+```{r 1.4}
+pNpS.assoc <- pNpS.assoc.long %>% dplyr::filter(MutationNum > 5) %>% dplyr::select(1:3) %>% pivot_wider(names_from = "Gene", values_from = "pNpS_read")
+pNpS.assoc<-pNpS.assoc[colSums(!is.na(pNpS.assoc)) > 200]
+#pNpS[pNpS==0]<-NA
+#colMedians(as.matrix(pNpS.assoc[,-c(1)]), na.rm = T) %>% hist(breaks = 100)
+#match("102274_01456",colnames(pNpS)) %>% pNpS[[.]] %>% median(na.rm = T)
+
+## 102274
+pNpS.102274.assoc <- pNpS.102274.long %>% dplyr::filter(MutationNum > 5) %>% dplyr::select(1:3) %>% pivot_wider(names_from = "Gene", values_from = "pNpS_read")
+pNpS.102274.assoc<-pNpS.102274.assoc[colSums(!is.na(pNpS.102274.assoc)) > 200]
+#pNpS[pNpS==0]<-NA
+colMedians(as.matrix(pNpS.102274.assoc[,-c(1:2)]), na.rm = T) %>% hist(breaks = 100)
+match("102274_01456",colnames(pNpS.102274.assoc)) %>% pNpS.102274.assoc[[.]] %>% median(na.rm = T)
+
+pNpS <- pNpS.long %>% dplyr::filter(MutationNum > 5) %>% pivot_wider(names_from = "Gene", values_from = "pNpS_read")
+pNpS<-pNpS[colSums(!is.na(pNpS)) > 200]
+#pNpS[pNpS==0]<-NA
+colMedians(as.matrix(pNpS[,-c(1:2)]), na.rm = T) %>% hist(breaks = 100)
+match("102274_01456",colnames(pNpS)) %>% pNpS[[.]] %>% median(na.rm = T)
+```
+
+## 2 Age
+
+```{r 2}
+pNpS.102274.assoc <- pNpS.102274.long %>% dplyr::filter(MutationNum > 5) %>% dplyr::select(1:3) %>% pivot_wider(names_from = "Gene", values_from = "pNpS_read")
+pNpS.102274.assoc.df <- pNpS.102274.assoc
+pNpS.102274.assoc.df$Age <- pNpS.102274.assoc$Sample %>% match(rownames(full_phen)) %>% full_phen$Age[.]
+pNpS.102274.assoc.df$Cohort <- pNpS.102274.assoc$Sample %>% match(sampleCohorts$V1) %>% sampleCohorts$V2[.]
+
+# dmp
+cohort <- "dmp"
+
+pNpS.102274.assoc.df.filter <- pNpS.102274.assoc.df %>% 
+  dplyr::select(Sample, Cohort, Age, `102274_01456`) %>%
+  na.omit()
+
+age.quantile <- quantile(pNpS.102274.assoc.df$Age[pNpS.102274.assoc.df$Cohort==cohort], na.rm = T)
+
+pNpS.102274.assoc.df.young <- pNpS.102274.assoc.df %>% dplyr::filter((Cohort == cohort) & (Age < age.quantile[2]))
+pNpS.102274.assoc.df.young<-pNpS.102274.assoc.df.young[,colSums(!is.na(pNpS.102274.assoc.df.young)) > 5]
+
+pNpS.102274.assoc.df.middle <- pNpS.102274.assoc.df %>% dplyr::filter((Cohort == cohort) & (Age >= age.quantile[2]) & (Age < age.quantile[4]))
+pNpS.102274.assoc.df.middle<-pNpS.102274.assoc.df.middle[,colSums(!is.na(pNpS.102274.assoc.df.middle)) > 5]
+
+pNpS.102274.assoc.df.old <- pNpS.102274.assoc.df %>% dplyr::filter((Cohort == cohort) & (Age >= age.quantile[4]))
+pNpS.102274.assoc.df.old<-pNpS.102274.assoc.df.old[,colSums(!is.na(pNpS.102274.assoc.df.old)) > 5]
+
+ecdf.young <- ecdf(colMedians(as.matrix(pNpS.102274.assoc.df.young[,2:(ncol(pNpS.102274.assoc.df.young)-2)]), na.rm = T))
+rank.young <- ecdf.young(median(pNpS.102274.assoc.df.young$`102274_01456`, na.rm = T))
+ecdf.middle <- ecdf(colMedians(as.matrix(pNpS.102274.assoc.df.middle[,2:(ncol(pNpS.102274.assoc.df.middle)-2)]), na.rm = T))
+rank.middle <- ecdf.middle(median(pNpS.102274.assoc.df.middle$`102274_01456`, na.rm = T))
+ecdf.old <- ecdf(colMedians(as.matrix(pNpS.102274.assoc.df.old[,2:(ncol(pNpS.102274.assoc.df.old)-2)]), na.rm = T))
+rank.old <- ecdf.old(median(pNpS.102274.assoc.df.old$`102274_01456`, na.rm = T))
+
+rank.df <- data.frame(AgeQuantile = c("Q1", "Q4"),
+                      pnpsQuantile = c(rank.young, rank.old))
+pdf("16.pressure/102274_01456.pNpS.quantile.dmp.pdf", width = 2.2, height = 3)
+ggplot(rank.df, aes(AgeQuantile, pnpsQuantile, fill = AgeQuantile))+
+  geom_bar(stat = "identity")+
+  geom_text(aes(label=round(pnpsQuantile,digits = 2)), vjust=1.6, color="white",size=3.5)+
+  xlab("Age quantile")+
+  ylab("pN/pS quantile in background")+
+  scale_y_continuous(expand = c(0,0))+
+  scale_fill_npg()+
+  theme_classic()+
+  theme(legend.position = "none")
+dev.off()
+
+# lld1
+cohort <- "lld1"
+
+pNpS.102274.assoc.df.filter <- pNpS.102274.assoc.df %>% 
+  dplyr::select(Sample, Cohort, Age, `102274_01456`) %>%
+  na.omit()
+
+age.quantile <- quantile(pNpS.102274.assoc.df$Age[pNpS.102274.assoc.df$Cohort==cohort], na.rm = T)
+
+pNpS.102274.assoc.df.young <- pNpS.102274.assoc.df %>% dplyr::filter((Cohort == cohort) & (Age < age.quantile[2]))
+pNpS.102274.assoc.df.young<-pNpS.102274.assoc.df.young[,colSums(!is.na(pNpS.102274.assoc.df.young)) > 5]
+
+pNpS.102274.assoc.df.middle <- pNpS.102274.assoc.df %>% dplyr::filter((Cohort == cohort) & (Age >= age.quantile[2]) & (Age < age.quantile[4]))
+pNpS.102274.assoc.df.middle<-pNpS.102274.assoc.df.middle[,colSums(!is.na(pNpS.102274.assoc.df.middle)) > 5]
+
+pNpS.102274.assoc.df.old <- pNpS.102274.assoc.df %>% dplyr::filter((Cohort == cohort) & (Age >= age.quantile[4]))
+pNpS.102274.assoc.df.old<-pNpS.102274.assoc.df.old[,colSums(!is.na(pNpS.102274.assoc.df.old)) > 5]
+
+ecdf.young <- ecdf(colMedians(as.matrix(pNpS.102274.assoc.df.young[,2:(ncol(pNpS.102274.assoc.df.young)-2)]), na.rm = T))
+rank.young <- ecdf.young(median(pNpS.102274.assoc.df.young$`102274_01456`, na.rm = T))
+ecdf.middle <- ecdf(colMedians(as.matrix(pNpS.102274.assoc.df.middle[,2:(ncol(pNpS.102274.assoc.df.middle)-2)]), na.rm = T))
+rank.middle <- ecdf.middle(median(pNpS.102274.assoc.df.middle$`102274_01456`, na.rm = T))
+ecdf.old <- ecdf(colMedians(as.matrix(pNpS.102274.assoc.df.old[,2:(ncol(pNpS.102274.assoc.df.old)-2)]), na.rm = T))
+rank.old <- ecdf.old(median(pNpS.102274.assoc.df.old$`102274_01456`, na.rm = T))
+
+rank.df <- data.frame(AgeQuantile = c("Q1", "Q4"),
+                      pnpsQuantile = c(rank.young, rank.old))
+pdf("16.pressure/102274_01456.pNpS.quantile.lld1.pdf", width = 2.2, height = 3)
+ggplot(rank.df, aes(AgeQuantile, pnpsQuantile, fill = AgeQuantile))+
+  geom_bar(stat = "identity")+
+  geom_text(aes(label=round(pnpsQuantile,digits = 2)), vjust=1.6, color="white",size=3.5)+
+  xlab("Age quantile")+
+  ylab("pN/pS quantile in background")+
+  scale_y_continuous(expand = c(0,0))+
+  scale_fill_npg()+
+  theme_classic()+
+  theme(legend.position = "none")
+dev.off()
+
+# 300tzfg
+cohort <- "300tzfg"
+
+pNpS.102274.assoc.df.filter <- pNpS.102274.assoc.df %>% 
+  dplyr::select(Sample, Cohort, Age, `102274_01456`) %>%
+  na.omit()
+
+age.quantile <- quantile(pNpS.102274.assoc.df$Age[pNpS.102274.assoc.df$Cohort==cohort], na.rm = T)
+
+pNpS.102274.assoc.df.young <- pNpS.102274.assoc.df %>% dplyr::filter((Cohort == cohort) & (Age < age.quantile[2]))
+pNpS.102274.assoc.df.young<-pNpS.102274.assoc.df.young[,colSums(!is.na(pNpS.102274.assoc.df.young)) > 5]
+
+pNpS.102274.assoc.df.middle <- pNpS.102274.assoc.df %>% dplyr::filter((Cohort == cohort) & (Age >= age.quantile[2]) & (Age < age.quantile[4]))
+pNpS.102274.assoc.df.middle<-pNpS.102274.assoc.df.middle[,colSums(!is.na(pNpS.102274.assoc.df.middle)) > 5]
+
+pNpS.102274.assoc.df.old <- pNpS.102274.assoc.df %>% dplyr::filter((Cohort == cohort) & (Age >= age.quantile[4]))
+pNpS.102274.assoc.df.old<-pNpS.102274.assoc.df.old[,colSums(!is.na(pNpS.102274.assoc.df.old)) > 5]
+
+ecdf.young <- ecdf(colMedians(as.matrix(pNpS.102274.assoc.df.young[,2:(ncol(pNpS.102274.assoc.df.young)-2)]), na.rm = T))
+rank.young <- ecdf.young(median(pNpS.102274.assoc.df.young$`102274_01456`, na.rm = T))
+ecdf.middle <- ecdf(colMedians(as.matrix(pNpS.102274.assoc.df.middle[,2:(ncol(pNpS.102274.assoc.df.middle)-2)]), na.rm = T))
+rank.middle <- ecdf.middle(median(pNpS.102274.assoc.df.middle$`102274_01456`, na.rm = T))
+ecdf.old <- ecdf(colMedians(as.matrix(pNpS.102274.assoc.df.old[,2:(ncol(pNpS.102274.assoc.df.old)-2)]), na.rm = T))
+rank.old <- ecdf.old(median(pNpS.102274.assoc.df.old$`102274_01456`, na.rm = T))
+
+rank.df <- data.frame(AgeQuantile = c("Q1", "Q4"),
+                      pnpsQuantile = c(rank.young, rank.old))
+pdf("16.pressure/102274_01456.pNpS.quantile.300tzfg.pdf", width = 2.2, height = 3)
+ggplot(rank.df, aes(AgeQuantile, pnpsQuantile, fill = AgeQuantile))+
+  geom_bar(stat = "identity")+
+  geom_text(aes(label=round(pnpsQuantile,digits = 2)), vjust=1.6, color="white",size=3.5)+
+  xlab("Age quantile")+
+  ylab("pN/pS quantile in background")+
+  scale_y_continuous(expand = c(0,0))+
+  scale_fill_npg()+
+  theme_classic()+
+  theme(legend.position = "none")
+dev.off()
+```
+
+## 2 Gene pN/pS associations
+
+```{r 2}
+mwas.pnps.phen.cor <- matrix(NA, nrow = nrow(mwas.gene.phen), ncol = 5) %>% as.data.frame()
+colnames(mwas.gene.phen.cor) <- c("Phenotype", "Gene", "R", "P", "FDR")
+
+for (i in 1:nrow(mwas.gene.phen)) {
+#  i <- 30
+  phen_i <- mwas.gene.phen$Phenotype[i]
+  gene_i <- paste("X", mwas.gene.phen$Gene[i], sep = "")
+  sample_i <- sampleCohorts$V1[sampleCohorts$V2=="dmp"]
+  
+  try(
+  df_i   <- data.frame(
+    Sample = sample_i,
+    Phenotype = sample_i %>% match(rownames(full_phen)) %>% full_phen[.,match(phen_i, colnames(full_phen))],
+    Gene = sample_i %>% match(rownames(geneAbun))  %>% geneAbun[.,match(gene_i, colnames(geneAbun))]
+  ) ,silent = T
+  )
+  df_i <- df_i %>% na.omit()
+  
+  mwas.gene.phen.cor$Phenotype[i] <- phen_i
+  mwas.gene.phen.cor$Gene[i] <- gene_i
+  
+  if(nrow(df_i) > 20){
+    cor_i <- cor.test(df_i$Phenotype, df_i$Gene, method = "spearman")
+
+    mwas.gene.phen.cor$R[i] <- cor_i$estimate
+    mwas.gene.phen.cor$P[i] <- cor_i$p.value
+  }else{
+    mwas.gene.phen.cor$R[i] <- NA
+    mwas.gene.phen.cor$P[i] <- NA
+  }
+  
+  df_i   <- data.frame(
+    Sample = sample_i,
+    Phenotype = NA,
+    Gene = NA
+  )
+}
+
+mwas.gene.phen.cor$FDR <- p.adjust(mwas.gene.phen.cor$P, method = "fdr")
+mwas.gene.phen.cor.full <- mwas.gene.phen.cor$Gene %>% str_replace_all("X", "") %>% match(geneAnno$ID) %>% geneAnno[.,] %>% cbind(mwas.gene.phen.cor,.)
+```

@@ -1,0 +1,281 @@
+---
+title: "Gene abundance analysis"
+author: "Daoming Wang"
+date: "2024/05/21"
+output:
+  html_document: 
+    theme: flatly
+    highlight: espresso
+    toc: true
+    toc_depth: 4
+    toc_float: true
+  word_document: default
+  pdf_document:
+    includes:
+      in_header: header.tex
+      keep_tex: yes
+      latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## 1 Preparation
+
+### 1.1 Library
+
+```{r 1.1}
+suppressMessages(source("functions.R"))
+```
+
+### 1.2 Input
+
+```{r 1.2}
+mwasCoh.cl <- read.csv("11.cohSpeOverview/mwasCoh.cl.long.tsv", sep = "\t", header = T)
+mwasMeta.cl <- read.csv("09.metaAnalysisOverview/mwasMeta.cl.pt.full.filtered.tsv", sep = "\t", header = T)
+mediation.sig <- read.table("14.mediationAnalysis/snp_mediation.sig.full.tsv", sep = "\t", header = T)
+
+geneAbun <- read.table("00.rawData/geneAbun/1979genes.shortbred.txt", sep = "\t", header = T, row.names = "Family")
+sampleCohorts<-read.table("00.rawData/cohortList/sampleCohorts.tsv",header = F)
+phenInfo<-read.table("02.phenotype_summary/phenInfoSumm.tsv", sep = "\t",header = T, check.names = F)
+load("01.cleanData/phenotype/full_phen.RData")
+geneAnno <- readRDS("01.cleanData/annotation/geneAnno.df.rds")
+pt.af.raw <- fread("00.rawData/mwas/prioritizedGenotype/mwasMeta.cl.pt.17965SNPs.AF.tsv",sep = "\t", na.strings = ".") %>%
+  as.matrix(rownames = 1)
+pt.af.coh.raw <- fread("00.rawData/mwas/prioritizedGenotype/EMMAX.mwasCoh.cl.pt.74415SNPs.AF.tsv",sep = "\t", na.strings = ".") %>%
+  as.matrix(rownames = 1)
+
+mbio.dmp.raw <- fread("../../Dataset/rawdata/DAG3_microbiome/metaphlan4/DAG3_merged_metaphlan4_2024Apr.txt", sep = "\t") %>% as.matrix(rownames=1)
+```
+
+### 1.3 Prepare
+
+```{r 1.3, eval=FALSE}
+if (!dir.exists("15.geneAbun")) {dir.create("15.geneAbun")}
+#gene.list <- c(mwasMeta.cl$Gene,mwasCoh.cl$Gene) %>% unique
+gene.list <- c(mwasMeta.cl$Gene,
+               mediation.sig$V2,
+               mwasCoh.cl$Gene[mwasCoh.cl$Annotation=="clpB"]) %>% unique
+
+write.table(gene.list, "15.geneAbun/1979genes.list", row.names = F, col.names = F, quote = F)
+```
+
+### 1.4 Clean tables
+
+```{r 1.4}
+mwasMeta.cl.gene.phen <- mwasMeta.cl %>% dplyr::select(Phenotype, Gene) %>% unique()
+mwasCoh.cl.gene.phen  <- mwasCoh.cl  %>% dplyr::select(Phenotype, Gene) %>% unique()
+mwas.gene.phen <- rbind(mwasMeta.cl.gene.phen, mwasCoh.cl.gene.phen) %>% unique()
+
+ptDS <- pt.af.raw
+colnames(ptDS) <- colnames(ptDS) %>% str_replace_all(":.*", "") %>% str_replace_all(".*]", "")
+ptDS <-t(ptDS)
+
+ptDS.coh <- pt.af.coh.raw
+colnames(ptDS.coh) <- colnames(ptDS.coh) %>% str_replace_all(":.*", "") %>% str_replace_all(".*]", "")
+ptDS.coh <-t(ptDS.coh)
+
+## dmp
+colnames(mbio.dmp.raw) <- colnames(mbio.dmp.raw) %>% str_replace_all("_metaphlan", "") # %>% paste("fece_",.,sep = "") %>% match(dmp_id$LLD_bam_id) %>% dmp_id$LLD_GoNL_all_id[.]
+mbio.dmp.raw <- mbio.dmp.raw[,!is.na(colnames(mbio.dmp.raw))]
+mbio.dmp.bac <- mbio.dmp.raw[grep('k__Bacteria',rownames(mbio.dmp.raw)),]
+mbio.dmp.s   <- mbio.dmp.bac[grep("s__", rownames(mbio.dmp.bac)), ] %>% .[grep("t__", rownames(.), invert = T),]
+rownames(mbio.dmp.s) <- rownames(mbio.dmp.s) %>% str_replace_all(".*s__", "")
+
+mbio.dmp.s.alpha <- data.frame(Shannon  = vegan::diversity(t(mbio.dmp.s), index="shannon"), 
+                                Richness = rowSums(t(mbio.dmp.s)!=0))
+
+mbio.dmp.s.summ <- data.frame(species = rownames(mbio.dmp.s),
+                               Prevalence = rowSums(mbio.dmp.s > 0)/ncol(mbio.dmp.s),
+                               Abundance = rowMeans(mbio.dmp.s))
+
+mbio.dmp.s.filt <- mbio.dmp.s[mbio.dmp.s.summ$Prevalence>0.05 & mbio.dmp.s.summ$Abundance > 0,] %>% t
+mbio.dmp.s.filt <- apply(mbio.dmp.s.filt, 1, myfun<-function(x){x/sum(x)}) %>% t() %>% as.data.frame()
+
+```
+
+
+## 2 Gene abundance associations
+
+### 2.1 Direct associations
+
+```{r 2.1}
+mwas.gene.phen.cor <- matrix(NA, nrow = nrow(mwas.gene.phen), ncol = 5) %>% as.data.frame()
+colnames(mwas.gene.phen.cor) <- c("Phenotype", "Gene", "R", "P", "FDR")
+
+for (i in 1:nrow(mwas.gene.phen)) {
+#  i <- 276
+  phen_i <- mwas.gene.phen$Phenotype[i]
+  gene_i <- paste("X", mwas.gene.phen$Gene[i], sep = "")
+  sample_i <- sampleCohorts$V1[sampleCohorts$V2=="dmp"]
+  
+  try(
+  df_i   <- data.frame(
+    Sample = sample_i,
+    Phenotype = sample_i %>% match(rownames(full_phen)) %>% full_phen[.,match(phen_i, colnames(full_phen))],
+    Gene = sample_i %>% match(rownames(geneAbun))  %>% geneAbun[.,match(gene_i, colnames(geneAbun))]
+  ) ,silent = T
+  )
+  df_i <- df_i %>% na.omit()
+  
+  mwas.gene.phen.cor$Phenotype[i] <- phen_i
+  mwas.gene.phen.cor$Gene[i] <- gene_i
+  
+  if(nrow(df_i) > 20){
+    cor_i <- cor.test(df_i$Phenotype, df_i$Gene, method = "spearman")
+
+    mwas.gene.phen.cor$R[i] <- cor_i$estimate
+    mwas.gene.phen.cor$P[i] <- cor_i$p.value
+  }else{
+    mwas.gene.phen.cor$R[i] <- NA
+    mwas.gene.phen.cor$P[i] <- NA
+  }
+  
+  df_i   <- data.frame(
+    Sample = sample_i,
+    Phenotype = NA,
+    Gene = NA
+  )
+}
+
+mwas.gene.phen.cor$FDR <- p.adjust(mwas.gene.phen.cor$P, method = "fdr")
+mwas.gene.phen.cor.full <- mwas.gene.phen.cor$Gene %>% str_replace_all("X", "") %>% match(geneAnno$ID) %>% geneAnno[.,] %>% cbind(mwas.gene.phen.cor,.)
+```
+
+### 2.2 SNPxGene interaction (replicable associations)
+
+```{r 2.2}
+snp.gene.phen <- matrix(NA, nrow = nrow(mwasMeta.cl), ncol = 19) %>% as.data.frame()
+colnames(snp.gene.phen) <- c("Phenotype", "SNP", "Gene", "N",
+                             "SNP.model1.Beta", "SNP.model1.P", "Gene.model1.Beta", "Gene.model1.P", "Model1.Adj.R2", "Model1.P", 
+                             "SNP.model2.Beta", "SNP.model2.P", "Gene.model2.Beta", "Gene.model2.P", "SNPxGene.model2.Beta", "SNPxGene.model2.P", "Model2.P", "Model2.Adj.R2",
+                             "Anova.P")
+
+for (i in 1:nrow(mwasMeta.cl)) {
+#  i <- 2
+  cat(paste(i, "\n"))
+  
+  phen_i <- mwasMeta.cl$Phenotype[i]
+  snp_i  <- mwasMeta.cl$SNP[i]
+  gene_i <- paste("X", mwasMeta.cl$Gene[i], sep = "")
+  sample_i <- sampleCohorts$V1[sampleCohorts$V2=="dmp"]
+  
+  snp.gene.phen$Phenotype[i] <- phen_i
+  snp.gene.phen$SNP[i]       <- snp_i
+  snp.gene.phen$Gene[i]      <- gene_i
+  
+  if((mwasMeta.cl$P.dmp[i] < 0.05) & (!is.na(mwasMeta.cl$P.dmp[i]))){
+    try(
+      df_i   <- data.frame(
+        Sample = sample_i,
+        Phenotype = sample_i %>% match(rownames(full_phen)) %>% full_phen[.,match(phen_i, colnames(full_phen))],
+        Sex = sample_i %>% match(rownames(full_phen)) %>% full_phen[.,match("Sex", colnames(full_phen))],
+        Age = sample_i %>% match(rownames(full_phen)) %>% full_phen[.,match("Age", colnames(full_phen))],
+        SNP = ptDS[match(sample_i, rownames(ptDS)), match(snp_i, colnames(ptDS))],
+        Gene = sample_i %>% match(rownames(geneAbun))  %>% geneAbun[.,match(gene_i, colnames(geneAbun))]
+      ) ,silent = T
+    )
+    df_i <- df_i %>% na.omit()
+    df_i <- df_i[df_i$Gene>0,]
+    snp.gene.phen$N[i] <- nrow(df_i)
+    
+    try(
+    if(nrow(df_i) > 20){
+      lm.formula <- ifelse(phen_i == "Sex", "Phenotype ~ Age + SNP + Gene",
+                           ifelse(phen_i == "Age", "Phenotype ~ Sex + SNP + Gene",
+                                  "Phenotype ~ Age + Sex + SNP + Gene"))
+      
+      
+      lm_res_i_1 <- lm(lm.formula, data = df_i);  lm_summ_i_1 <- summary(lm_res_i_1)
+      lm_res_i_2 <- lm( paste(lm.formula, "+ SNP*Gene", sep = ""), data = df_i);  lm_summ_i_2 <- summary(lm_res_i_2)
+      lm_compare <- anova(lm_res_i_1, lm_res_i_2)
+      
+      snp.gene.phen$SNP.model1.Beta[i]  <- lm_summ_i_1$coefficients["SNP", 1]
+      snp.gene.phen$SNP.model1.P[i]     <- lm_summ_i_1$coefficients["SNP", 4]
+      snp.gene.phen$Gene.model1.Beta[i] <- lm_summ_i_1$coefficients["Gene", 1]
+      snp.gene.phen$Gene.model1.P[i]    <- lm_summ_i_1$coefficients["Gene", 4]
+      snp.gene.phen$Model1.Adj.R2[i]    <- lm_summ_i_1$adj.r.squared
+      snp.gene.phen$Model1.P[i]         <- glance(lm_summ_i_1)$p.value
+      
+      snp.gene.phen$SNP.model2.Beta[i]      <- lm_summ_i_2$coefficients["SNP", 1]
+      snp.gene.phen$SNP.model2.P[i]         <- lm_summ_i_2$coefficients["SNP", 4]
+      snp.gene.phen$Gene.model2.Beta[i]     <- lm_summ_i_2$coefficients["Gene", 1]
+      snp.gene.phen$Gene.model2.P[i]        <- lm_summ_i_2$coefficients["Gene", 4]
+      snp.gene.phen$SNPxGene.model2.Beta[i] <- lm_summ_i_2$coefficients["SNP:Gene", 1]
+      snp.gene.phen$SNPxGene.model2.P[i]    <- lm_summ_i_2$coefficients["SNP:Gene", 4]
+      snp.gene.phen$Model2.Adj.R2[i]        <- lm_summ_i_2$adj.r.squared
+      snp.gene.phen$Model2.P[i]             <- glance(lm_summ_i_2)$p.value
+      
+      snp.gene.phen$Anova.P[i]             <- lm_compare$`Pr(>F)`[2]
+    }
+    ,silent = T)
+  }
+}
+
+```
+
+### 2.3 SNPxGene interaction (selected single-cohort associations)
+
+```{r 2.3}
+
+```
+
+### 2.4 Examples
+
+```{r 2.4}
+snp.gene.phen.df   <- data.frame(
+  Sample    = sampleCohorts$V1[sampleCohorts$V2=="dmp"],
+  Sex = sampleCohorts$V1[sampleCohorts$V2=="dmp"] %>% match(rownames(full_phen)) %>% full_phen[., "Sex"],
+  Age = sampleCohorts$V1[sampleCohorts$V2=="dmp"] %>% match(rownames(full_phen)) %>% full_phen[., "Age"],
+  Phenotype = sampleCohorts$V1[sampleCohorts$V2=="dmp"] %>% match(rownames(full_phen)) %>% full_phen[., "Weight"],
+  SNP       = sampleCohorts$V1[sampleCohorts$V2=="dmp"] %>% match(rownames(ptDS))      %>% ptDS.coh[., match("101429_338229", colnames(ptDS.coh))],
+  Gene      = sampleCohorts$V1[sampleCohorts$V2=="dmp"] %>% match(rownames(geneAbun))  %>% geneAbun[.,"X101429_00311"],
+  Species   = sampleCohorts$V1[sampleCohorts$V2=="dmp"] %>% match(rownames(mbio.dmp.s.filt))  %>% mbio.dmp.s.filt[.,"Alistipes_ihumii"]
+  ) 
+
+snp.gene.phen.df$SpeciesPA <- NA
+snp.gene.phen.df$SpeciesPA[snp.gene.phen.df$Species==0] <- "Absent"
+snp.gene.phen.df$SpeciesPA[snp.gene.phen.df$Species>0]  <- "Present"
+
+snp.gene.phen.df$GenePA <- NA
+snp.gene.phen.df$GenePA[snp.gene.phen.df$Gene==0] <- "Absent"
+snp.gene.phen.df$GenePA[snp.gene.phen.df$Gene>0]  <- "Present"
+
+snp.gene.phen.df$Genotype <- NA
+snp.gene.phen.df$Genotype[snp.gene.phen.df$SNP==0] <- "No Alt"
+snp.gene.phen.df$Genotype[snp.gene.phen.df$SNP>0] <- "With Alt"
+
+snp.gene.phen.df$Group <- NA
+snp.gene.phen.df$Group[snp.gene.phen.df$SpeciesPA=="Absent" & snp.gene.phen.df$GenePA =="Absent"] <- "Species absent"
+#snp.gene.phen.df$Group[snp.gene.phen.df$SpeciesPA=="Present" & snp.gene.phen.df$GenePA =="Absent"] <- "Gene absent"
+snp.gene.phen.df$Group[snp.gene.phen.df$SpeciesPA=="Present" & snp.gene.phen.df$GenePA =="Present" & snp.gene.phen.df$Genotype =="No Alt"] <- "Species present + no mutation"
+snp.gene.phen.df$Group[snp.gene.phen.df$SpeciesPA=="Present" & snp.gene.phen.df$GenePA =="Present" & snp.gene.phen.df$Genotype =="With Alt"] <- "Species present + with mutation"
+
+snp.gene.phen.df$Group <- factor(snp.gene.phen.df$Group, levels = c("Species absent","Species present + no mutation", "Species present + with mutation"))
+my_comparisons <- list(c("Species absent", "Species present + no mutation"), c("Species absent", "Species present + with mutation"), c("Species present + no mutation", "Species present + with mutation"))
+pdf("15.geneAbun/X101429_00311.clpB.pdf", width = 3.5, height = 5)
+snp.gene.phen.df %>%
+  dplyr::filter(!is.na(Group)) %>%
+  ggviolin(x = "Group", y = "Phenotype",fill = "Group",color = "Group",
+           palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+           add = "boxplot", add.params = list(fill = "white"))+
+  stat_compare_means(comparisons = my_comparisons)+
+  stat_compare_means(label.y = 210 )+
+  theme(legend.position = "none")
+dev.off()
+
+
+snp.gene.phen.df.rm0 <- snp.gene.phen.df[snp.gene.phen.df$GenePA=="Present" & snp.gene.phen.df$SpeciesPA=="Present",]
+
+lm_res_1 <- lm(Phenotype ~ Sex + Age + SNP + Species, data = snp.gene.phen.df.rm0);  lm_summ_i_1 <- summary(lm_res_1)
+lm_res_2 <- lm(Phenotype ~ Sex + Age + SNP + Species + SNP*Species, data = snp.gene.phen.df.rm0);  lm_summ_i_2 <- summary(lm_res_2)
+lm_compare <- anova(lm_res_1, lm_res_2)
+
+cor.test(snp.gene.phen.df.rm0$Species, snp.gene.phen.df.rm0$Phenotype, method = "spearman")
+cor.test(snp.gene.phen.df.rm0$SNP, snp.gene.phen.df.rm0$Phenotype, method = "spearman")
+cor.test(snp.gene.phen.df.rm0$Species[snp.gene.phen.df.rm0$SNP==0], snp.gene.phen.df.rm0$Phenotype[snp.gene.phen.df.rm0$SNP==0], method = "spearman")
+cor.test(snp.gene.phen.df.rm0$Species[snp.gene.phen.df.rm0$SNP>0], snp.gene.phen.df.rm0$Phenotype[snp.gene.phen.df.rm0$SNP>0], method = "spearman")
+```
+
+
